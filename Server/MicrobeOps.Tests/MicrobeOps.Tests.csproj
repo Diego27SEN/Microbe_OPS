@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../MicrobeOps.Core/MicrobeOps.Core.csproj" />
+    <ProjectReference Include="../MicrobeOps.Module/MicrobeOps.Module.csproj" />
   </ItemGroup>
 
 </Project>
