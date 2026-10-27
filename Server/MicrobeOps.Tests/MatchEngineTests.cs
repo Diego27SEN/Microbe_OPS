@@ -5,37 +5,46 @@ using Xunit;
 
 namespace MicrobeOps.Tests
 {
-    // Azar controlable: si hay valores forzados los devuelve; si no, usa un Random con semilla fija.
-    public sealed class ScriptedRandom : IRandom
-    {
-        private readonly Random inner;
-        public readonly Queue<int> Forced = new Queue<int>();
-
-        public ScriptedRandom(int seed = 1) { inner = new Random(seed); }
-
-        public int Next(int minInclusive, int maxExclusive) =>
-            Forced.Count > 0 ? Forced.Dequeue() : inner.Next(minInclusive, maxExclusive);
-    }
-
+    // Reglas puras, reproducidas desde una lista de jugadas (patrón TTTXO: replay determinista).
     public class MatchEngineTests
     {
         private const long T0 = 1_000_000;
         private const string A = "alice"; // Glóbulos Blancos, empieza
         private const string B = "bob";   // Bacterias
 
-        private static (MatchEngine engine, ScriptedRandom rng) NewStartedMatch(MatchSettings settings = null)
+        private static MatchRecord NewRecord(int seed = 7, MatchSettings settings = null) => new MatchRecord
         {
-            var rng = new ScriptedRandom();
-            var engine = new MatchEngine("M1", settings ?? new MatchSettings(), rng);
-            Assert.True(engine.Join(A, T0).Ok);
-            Assert.True(engine.Join(B, T0).Ok);
-            return (engine, rng);
+            MatchId = "M1",
+            Settings = settings ?? new MatchSettings(),
+            PlayerIds = { A, B },
+            CreatedAtMs = T0,
+            StartedAtMs = T0,
+            PlacementSeed = seed,
+        };
+
+        private static MoveRecord Roll(string p, int face, long at = T0 + 1000) => new MoveRecord { PlayerId = p, Kind = MoveKinds.Roll, Face = face, AtMs = at };
+        private static MoveRecord Shoot(string p, int x, int y, long at = T0 + 2000) => new MoveRecord { PlayerId = p, Kind = MoveKinds.Shoot, X = x, Y = y, AtMs = at };
+        private static MoveRecord Leave(string p, long at = T0 + 2000) => new MoveRecord { PlayerId = p, Kind = MoveKinds.Leave, AtMs = at };
+
+        // Aplica una jugada al registro (si es válida) y devuelve el motivo del rechazo, o null.
+        private static Rejection Play(MatchRecord r, MoveRecord m)
+        {
+            var engine = MatchEngine.Replay(r);
+            var rejection = engine.Apply(m);
+            if (rejection == null) r.Moves.Add(m);
+            return rejection;
         }
 
-        private static EngineResult Roll(MatchEngine e, ScriptedRandom rng, string player, int face, long now = T0)
+        private static MatchStateDto View(MatchRecord r, string player) => MatchEngine.Replay(r).ViewFor(player, T0);
+
+        // Un turno completo de 'p' con un disparo simple a una casilla libre del rival.
+        private static void SafeTurn(MatchRecord r, string p, int k, long at)
         {
-            rng.Forced.Enqueue(face);
-            return e.RollDice(player, now);
+            string other = p == A ? B : A;
+            var free = TestBoards.FreeCells(View(r, other).YourBoard);
+            var cell = free[k % free.Count];
+            Assert.Null(Play(r, Roll(p, 1, at)));
+            Assert.Null(Play(r, Shoot(p, cell.X, cell.Y, at + 1)));
         }
 
         // ---------- Dado ----------
@@ -54,114 +63,163 @@ namespace MicrobeOps.Tests
         }
 
         [Fact]
-        public void Dice_is_rolled_by_the_server_not_chosen_by_the_client()
+        public void The_face_comes_from_the_recorded_move_and_is_public()
         {
-            var (e, rng) = NewStartedMatch();
-            var r = Roll(e, rng, A, 8);
-            var msg = (DiceRolledMsg)r.Messages.First().Payload;
-            Assert.Equal(8, msg.Face);
-            Assert.Equal("Missile", msg.Result);
-            // RollDice no recibe ningún resultado del cliente: la firma ya lo impide.
+            var r = NewRecord();
+            Assert.Null(Play(r, Roll(A, 8)));
+
+            var view = View(r, B);
+            Assert.Equal("Missile", view.DiceResult);
+            var roll = view.Events.Single(e => e.Kind == MoveKinds.Roll);
+            Assert.Equal(8, roll.Face);
+            Assert.Equal(A, roll.PlayerId);
         }
 
-        // ---------- Inicio de partida e información oculta ----------
+        [Theory]
+        [InlineData(0)]
+        [InlineData(11)]
+        [InlineData(-3)]
+        public void A_forged_face_is_rejected(int face)
+        {
+            var r = NewRecord();
+            Assert.Equal(RejectCodes.InvalidMove, Play(r, Roll(A, face)).Code);
+            Assert.Empty(r.Moves);
+        }
+
+        // ---------- Replay determinista ----------
 
         [Fact]
-        public void Two_players_start_the_game_and_each_gets_only_their_own_board()
+        public void Replaying_the_same_record_gives_the_same_game()
         {
-            var rng = new ScriptedRandom();
-            var e = new MatchEngine("M1", new MatchSettings(), rng);
-            var first = e.Join(A, T0);
-            Assert.Empty(first.Messages);
-            Assert.Equal(MatchPhase.WaitingForPlayers, e.Phase);
+            var r = NewRecord();
+            for (int i = 0; i < 4; i++) { SafeTurn(r, A, i, T0 + 1000 + i * 10_000); SafeTurn(r, B, i, T0 + 6000 + i * 10_000); }
 
-            var second = e.Join(B, T0);
-            Assert.Equal(MatchPhase.Rolling, e.Phase);
-            Assert.Equal(2, second.Messages.Count);
-
-            var toA = (GameStartedMsg)second.Messages.Single(m => m.ToPlayerId == A).Payload;
-            var toB = (GameStartedMsg)second.Messages.Single(m => m.ToPlayerId == B).Payload;
-
-            Assert.Equal(Side.WhiteCells, toA.YourSide);
-            Assert.Equal(Side.Bacteria, toB.YourSide);
-            Assert.Equal(A, toA.CurrentPlayerId);
-            Assert.All(toA.YourBoard.Placements, p => Assert.Contains(Catalog.WhiteCells, d => d.Id == p.OrganismId));
-            Assert.All(toB.YourBoard.Placements, p => Assert.Contains(Catalog.Bacteria, d => d.Id == p.OrganismId));
-            Assert.Equal(5, toA.YourBoard.Placements.Count);
-            Assert.Equal(5, toB.YourBoard.Placements.Count);
-
-            // En JSON, lo que recibe A no menciona ningún organismo de B.
-            string jsonA = JsonConvert.SerializeObject(second.Messages.Single(m => m.ToPlayerId == A));
-            foreach (var d in Catalog.Bacteria) Assert.DoesNotContain(d.Id, jsonA);
+            var first = JsonConvert.SerializeObject(new[] { View(r, A), View(r, B) });
+            var second = JsonConvert.SerializeObject(new[] { View(r, A), View(r, B) });
+            Assert.Equal(first, second);
         }
 
         [Fact]
-        public void Third_player_cannot_join()
+        public void A_record_survives_a_json_round_trip()
         {
-            var (e, _) = NewStartedMatch();
-            var r = e.Join("carol", T0);
-            Assert.False(r.Ok);
-            Assert.Equal(RejectCodes.RoomFull, r.Rejection.Code);
+            var r = NewRecord();
+            SafeTurn(r, A, 0, T0 + 1000);
+            SafeTurn(r, B, 0, T0 + 6000);
+
+            var copy = JsonConvert.DeserializeObject<MatchRecord>(JsonConvert.SerializeObject(r));
+            Assert.Equal(JsonConvert.SerializeObject(View(r, A)), JsonConvert.SerializeObject(View(copy, A)));
         }
 
         [Fact]
-        public void Joining_twice_is_harmless()
+        public void Placement_is_decided_by_the_secret_seed()
         {
-            var rng = new ScriptedRandom();
-            var e = new MatchEngine("M1", new MatchSettings(), rng);
-            e.Join(A, T0);
-            Assert.True(e.Join(A, T0).Ok);
-            Assert.Equal(1, e.PlayerCount);
+            var same1 = View(NewRecord(seed: 42), A).YourBoard;
+            var same2 = View(NewRecord(seed: 42), A).YourBoard;
+            Assert.Equal(JsonConvert.SerializeObject(same1), JsonConvert.SerializeObject(same2));
+
+            bool someDiffer = Enumerable.Range(1, 8).Any(s =>
+                JsonConvert.SerializeObject(View(NewRecord(seed: s), A).YourBoard) != JsonConvert.SerializeObject(same1));
+            Assert.True(someDiffer);
         }
 
         [Fact]
-        public void The_view_of_a_player_never_contains_the_rival_layout()
+        public void Every_seed_gives_a_valid_board_of_five_organisms_per_side()
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 1);
-            e.Shoot(A, 0, 0, T0);
-
-            var view = e.ViewFor(A);
-            Assert.Equal(B, view.OpponentId);
-            Assert.Single(view.OpponentShots);                       // solo la casilla disparada
-            string json = JsonConvert.SerializeObject(view);
-            foreach (var d in Catalog.Bacteria) Assert.DoesNotContain(d.Id, json.Replace("OpponentSunk", ""));
+            for (int seed = 0; seed < 50; seed++)
+            {
+                var r = NewRecord(seed);
+                Assert.Equal(5, View(r, A).YourBoard.Placements.Count);
+                Assert.Equal(5, View(r, B).YourBoard.Placements.Count);
+            }
         }
 
-        // ---------- Validación de órdenes (anti-trampa) ----------
+        [Fact]
+        public void A_corrupt_record_is_detected()
+        {
+            var r = NewRecord();
+            r.Moves.Add(Shoot(A, 0, 0)); // disparar sin haber tirado el dado
+            Assert.Throws<InvalidOperationException>(() => MatchEngine.Replay(r));
+        }
+
+        // ---------- Vistas (información oculta) ----------
+
+        [Fact]
+        public void A_player_view_never_contains_the_rival_layout_or_the_seed()
+        {
+            var r = NewRecord();
+            string json = JsonConvert.SerializeObject(View(r, A));
+
+            foreach (var def in Catalog.Bacteria)
+                Assert.DoesNotContain(def.Id, json);          // ni un id de organismo rival
+            Assert.DoesNotContain("PlacementSeed", json);
+            Assert.Null(View(r, A).OpponentBoard);
+            Assert.Equal(5, View(r, A).YourBoard.Placements.Count); // solo el propio
+        }
+
+        [Fact]
+        public void The_two_players_get_different_views_of_the_same_game()
+        {
+            var r = NewRecord();
+            var a = View(r, A);
+            var b = View(r, B);
+            Assert.Equal(Side.WhiteCells, a.YourSide);
+            Assert.Equal(Side.Bacteria, b.YourSide);
+            Assert.NotEqual(JsonConvert.SerializeObject(a.YourBoard), JsonConvert.SerializeObject(b.YourBoard));
+            Assert.Equal(A, a.CurrentPlayerId);
+        }
+
+        [Fact]
+        public void Waiting_for_the_rival_has_no_boards_and_accepts_no_moves()
+        {
+            var r = new MatchRecord { MatchId = "W", PlayerIds = { A }, CreatedAtMs = T0 };
+            var engine = MatchEngine.Replay(r);
+            var view = engine.ViewFor(A, T0);
+
+            Assert.Equal("WaitingForPlayers", view.Phase);
+            Assert.Null(view.YourBoard);
+            Assert.Null(view.OpponentId);
+            Assert.Equal(RejectCodes.WaitingForOpponent, engine.Apply(Roll(A, 1)).Code);
+        }
+
+        // ---------- Validación de jugadas ----------
 
         [Fact]
         public void Cannot_shoot_before_rolling()
         {
-            var (e, _) = NewStartedMatch();
-            var r = e.Shoot(A, 0, 0, T0);
-            Assert.Equal(RejectCodes.WrongPhase, r.Rejection.Code);
+            var r = NewRecord();
+            Assert.Equal(RejectCodes.WrongPhase, Play(r, Shoot(A, 0, 0)).Code);
         }
 
         [Fact]
         public void Cannot_act_out_of_turn()
         {
-            var (e, rng) = NewStartedMatch();
-            Assert.Equal(RejectCodes.NotYourTurn, e.RollDice(B, T0).Rejection.Code);
-            Roll(e, rng, A, 1);
-            Assert.Equal(RejectCodes.NotYourTurn, e.Shoot(B, 0, 0, T0).Rejection.Code);
+            var r = NewRecord();
+            Assert.Equal(RejectCodes.NotYourTurn, Play(r, Roll(B, 1)).Code);
+            Assert.Empty(r.Moves);
         }
 
         [Fact]
         public void Cannot_roll_twice_in_the_same_turn()
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 1);
-            var again = Roll(e, rng, A, 8);
-            Assert.Equal(RejectCodes.AlreadyRolled, again.Rejection.Code);
+            var r = NewRecord();
+            Assert.Null(Play(r, Roll(A, 5)));
+            Assert.Equal(RejectCodes.AlreadyRolled, Play(r, Roll(A, 1)).Code);
         }
 
         [Fact]
-        public void Stranger_is_not_in_the_match()
+        public void A_stranger_is_not_in_the_match()
         {
-            var (e, _) = NewStartedMatch();
-            Assert.Equal(RejectCodes.NotInMatch, e.RollDice("mallory", T0).Rejection.Code);
-            Assert.Equal(RejectCodes.NotInMatch, e.Shoot("mallory", 0, 0, T0).Rejection.Code);
+            var r = NewRecord();
+            Assert.Equal(RejectCodes.NotInMatch, Play(r, Roll("mallory", 1)).Code);
+        }
+
+        [Fact]
+        public void Unknown_moves_and_forged_timeouts_are_rejected()
+        {
+            var r = NewRecord();
+            Assert.Equal(RejectCodes.UnknownMove, Play(r, new MoveRecord { PlayerId = A, Kind = "cheat", AtMs = T0 + 1 }).Code);
+            // Un 'timeout' solo vale cuando el plazo realmente venció.
+            Assert.Equal(RejectCodes.InvalidMove, Play(r, new MoveRecord { PlayerId = A, Kind = MoveKinds.Timeout, AtMs = T0 + 5 }).Code);
         }
 
         [Theory]
@@ -172,233 +230,281 @@ namespace MicrobeOps.Tests
         [InlineData(int.MaxValue, int.MinValue)]
         public void Out_of_range_cells_are_rejected_without_crashing(int x, int y)
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 1);
-            var r = e.Shoot(A, x, y, T0);
-            Assert.Equal(RejectCodes.OutOfBounds, r.Rejection.Code);
-            Assert.Equal(1, e.ViewFor(A).RemainingShots); // no se gastó el disparo
+            var r = NewRecord();
+            Assert.Null(Play(r, Roll(A, 1)));
+            Assert.Equal(RejectCodes.OutOfBounds, Play(r, Shoot(A, x, y)).Code);
         }
 
         [Fact]
         public void Repeating_a_cell_is_rejected_and_does_not_spend_the_shot()
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 5); // 2 disparos
-            Assert.True(e.Shoot(A, 3, 3, T0).Ok);
-            var again = e.Shoot(A, 3, 3, T0);
-            Assert.Equal(RejectCodes.AlreadyShot, again.Rejection.Code);
-            Assert.Equal(1, e.ViewFor(A).RemainingShots);
-        }
+            var r = NewRecord();
+            var free = TestBoards.FreeCells(View(r, B).YourBoard);
+            Assert.Null(Play(r, Roll(A, 5))); // 2 disparos
+            Assert.Null(Play(r, Shoot(A, free[0].X, free[0].Y)));
 
-        // ---------- Flujo de turnos ----------
-
-        [Fact]
-        public void Single_shot_ends_the_turn_and_passes_it_to_the_rival()
-        {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 1);
-            var r = e.Shoot(A, 0, 0, T0);
-
-            Assert.Equal(new[] { MessageTypes.ShotResolved, MessageTypes.ShotResolved, MessageTypes.TurnChanged, MessageTypes.TurnChanged },
-                r.Messages.Select(m => m.Type).ToArray());
-            Assert.Equal(B, e.CurrentPlayerId);
-            Assert.Equal(MatchPhase.Rolling, e.Phase);
+            Assert.Equal(RejectCodes.AlreadyShot, Play(r, Shoot(A, free[0].X, free[0].Y)).Code);
+            Assert.Equal(1, View(r, A).RemainingShots);
+            Assert.Equal(A, View(r, A).CurrentPlayerId);
         }
 
         [Fact]
-        public void Double_shot_allows_two_shots_then_changes_turn()
+        public void A_single_shot_passes_the_turn_to_the_rival()
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 6);
-            e.Shoot(A, 0, 0, T0);
-            Assert.Equal(A, e.CurrentPlayerId);
-            e.Shoot(A, 1, 0, T0);
-            Assert.Equal(B, e.CurrentPlayerId);
+            var r = NewRecord();
+            var free = TestBoards.FreeCells(View(r, B).YourBoard)[0];
+            Assert.Null(Play(r, Roll(A, 1)));
+            Assert.Null(Play(r, Shoot(A, free.X, free.Y)));
+
+            var view = View(r, B);
+            Assert.Equal(B, view.CurrentPlayerId);
+            Assert.Equal("Rolling", view.Phase);
+            Assert.Equal(2, view.TurnNumber);
+            Assert.Single(view.YourBoard.Shots); // el rival ve el disparo recibido en su tablero
         }
 
         [Fact]
-        public void Missile_hits_a_2x2_block_with_one_shot()
+        public void A_double_shot_allows_two_shots_then_changes_turn()
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 8);
-            var r = e.Shoot(A, 4, 2, T0);
-            var msg = (ShotResolvedMsg)r.Messages.First().Payload;
-            Assert.Equal(4, msg.Cells.Count);
-            Assert.Equal(B, e.CurrentPlayerId);
+            var r = NewRecord();
+            var free = TestBoards.FreeCells(View(r, B).YourBoard);
+            Assert.Null(Play(r, Roll(A, 6)));
+            Assert.Null(Play(r, Shoot(A, free[0].X, free[0].Y)));
+            Assert.Equal(A, View(r, A).CurrentPlayerId);
+            Assert.Null(Play(r, Shoot(A, free[1].X, free[1].Y)));
+            Assert.Equal(B, View(r, A).CurrentPlayerId);
         }
 
         [Fact]
-        public void Every_player_sees_consecutive_seq_numbers()
+        public void A_missile_hits_a_2x2_block_with_one_shot()
         {
-            var (e, rng) = NewStartedMatch();
-            var all = new List<Outgoing>();
-            all.AddRange(Roll(e, rng, A, 1).Messages);
-            all.AddRange(e.Shoot(A, 0, 0, T0).Messages);
-            all.AddRange(Roll(e, rng, B, 1).Messages);
-            all.AddRange(e.Shoot(B, 0, 0, T0).Messages);
+            var r = NewRecord();
+            Assert.Null(Play(r, Roll(A, 8)));
+            Assert.Null(Play(r, Shoot(A, 3, 2)));
 
-            foreach (var player in new[] { A, B })
-            {
-                var seqs = all.Where(m => m.ToPlayerId == player).Select(m => m.Seq).ToList();
-                Assert.Equal(Enumerable.Range(seqs[0], seqs.Count), seqs);
-            }
+            var ev = View(r, A).Events.Last(e => e.Kind == MoveKinds.Shoot);
+            Assert.Equal(4, ev.Cells.Count);
+            Assert.Equal(B, View(r, A).CurrentPlayerId);
+        }
+
+        [Fact]
+        public void A_missile_on_the_edge_only_hits_cells_inside_the_board()
+        {
+            var r = NewRecord();
+            Assert.Null(Play(r, Roll(A, 8)));
+            Assert.Null(Play(r, Shoot(A, 11, 5)));
+            Assert.Single(View(r, A).Events.Last(e => e.Kind == MoveKinds.Shoot).Cells);
+        }
+
+        [Fact]
+        public void Hits_and_sunk_organisms_are_reported_publicly()
+        {
+            var r = NewRecord();
+            var mycoplasma = View(r, B).YourBoard.Placements.Single(p => p.OrganismId == "mycoplasma"); // 1 casilla
+            Assert.Null(Play(r, Roll(A, 1)));
+            Assert.Null(Play(r, Shoot(A, mycoplasma.X, mycoplasma.Y)));
+
+            var cell = View(r, A).Events.Last().Cells.Single();
+            Assert.Equal("Sunk", cell.Kind);
+            Assert.Equal("Mycoplasma", cell.SunkOrganismName);
+            Assert.Contains("mycoplasma", View(r, A).OpponentSunk);
+            Assert.Contains(View(r, A).OpponentShots, s => s.X == mycoplasma.X && s.Y == mycoplasma.Y && s.Hit);
         }
 
         // ---------- Reubicar ----------
 
-        [Fact]
-        public void Relocating_tells_the_rival_that_it_happened_but_not_where()
+        private static (string id, int x, int y, int rot) FindRelocation(BoardSnapshot own)
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 9);
-            Assert.Equal(MatchPhase.Relocating, e.Phase);
+            var board = GameBoard.FromSnapshot(own);
+            foreach (var p in own.Placements)
+                for (int rot = 0; rot < 4; rot++)
+                    for (int x = 0; x < own.Cols; x++)
+                        for (int y = 0; y < own.Rows; y++)
+                            if ((x != p.X || y != p.Y || rot != p.Rotation) && board.CanMove(p.OrganismId, new Cell(x, y), rot))
+                                return (p.OrganismId, x, y, rot);
+            throw new InvalidOperationException("sin destino libre");
+        }
 
-            var mine = e.ViewFor(A).YourBoard.Placements.First(p => p.OrganismId == "basofilo");
-            // buscar un destino válido probando casillas
-            EngineResult moved = null;
-            for (int x = 0; x < 12 && moved == null; x++)
-                for (int y = 0; y < 6 && moved == null; y++)
-                {
-                    var r = e.Relocate(A, "basofilo", x, y, 0, T0);
-                    if (r.Ok) moved = r;
-                }
-            Assert.NotNull(moved);
+        [Fact]
+        public void Relocating_moves_my_organism_and_tells_the_rival_only_that_it_happened()
+        {
+            var r = NewRecord();
+            var (id, x, y, rot) = FindRelocation(View(r, A).YourBoard);
+            Assert.Null(Play(r, Roll(A, 9)));
+            Assert.Equal("Relocating", View(r, A).Phase);
 
-            var toMover = moved.Messages.First(m => m.ToPlayerId == A && m.Type != MessageTypes.TurnChanged);
-            var toRival = moved.Messages.First(m => m.ToPlayerId == B && m.Type != MessageTypes.TurnChanged);
-            Assert.Equal(MessageTypes.Relocated, toMover.Type);
-            Assert.Equal(MessageTypes.OpponentRelocated, toRival.Type);
-            Assert.DoesNotContain("\"X\"", JsonConvert.SerializeObject(toRival.Payload));
-            Assert.Equal(B, e.CurrentPlayerId); // reubicar cuesta el turno
+            var move = new MoveRecord { PlayerId = A, Kind = MoveKinds.Relocate, OrganismId = id, X = x, Y = y, Rotation = rot, AtMs = T0 + 2000 };
+            Assert.Null(Play(r, move));
+
+            var mine = View(r, A).YourBoard.Placements.Single(p => p.OrganismId == id);
+            Assert.Equal((x, y, rot), (mine.X, mine.Y, mine.Rotation));
+            Assert.Equal(B, View(r, A).CurrentPlayerId); // reubicar cuesta el turno
+
+            var rivalView = View(r, B);
+            var ev = rivalView.Events.Last();
+            Assert.Equal(MoveKinds.Relocate, ev.Kind);
+            Assert.Null(ev.Cells);
+            string json = JsonConvert.SerializeObject(rivalView);
+            foreach (var def in Catalog.WhiteCells) Assert.DoesNotContain(def.Id, json);
         }
 
         [Fact]
         public void Relocation_is_validated()
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 9);
-            Assert.Equal(RejectCodes.UnknownOrganism, e.Relocate(A, "ecoli", 0, 0, 0, T0).Rejection.Code); // organismo del rival
-            Assert.Equal(RejectCodes.UnknownOrganism, e.Relocate(A, "inventado", 0, 0, 0, T0).Rejection.Code);
-            Assert.Equal(RejectCodes.InvalidRelocation, e.Relocate(A, "neutrofilo", 11, 5, 0, T0).Rejection.Code); // se sale
-            Assert.Equal(MatchPhase.Relocating, e.Phase);
+            var r = NewRecord();
+            Assert.Null(Play(r, Roll(A, 9)));
+            var own = View(r, A).YourBoard.Placements[0];
+
+            Assert.Equal(RejectCodes.UnknownOrganism, Play(r, new MoveRecord { PlayerId = A, Kind = MoveKinds.Relocate, OrganismId = "ecoli", AtMs = T0 + 2000 }).Code);
+            Assert.Equal(RejectCodes.InvalidRelocation, Play(r, new MoveRecord { PlayerId = A, Kind = MoveKinds.Relocate, OrganismId = own.OrganismId, X = 99, Y = 99, AtMs = T0 + 2000 }).Code);
+            Assert.Equal(A, View(r, A).CurrentPlayerId); // los rechazos no gastan el turno
         }
 
         [Fact]
-        public void Cannot_relocate_without_the_dice_allowing_it()
+        public void Cannot_relocate_unless_the_dice_allows_it()
         {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 1);
-            Assert.Equal(RejectCodes.WrongPhase, e.Relocate(A, "basofilo", 0, 0, 0, T0).Rejection.Code);
+            var r = NewRecord();
+            var own = View(r, A).YourBoard.Placements[0];
+            Assert.Equal(RejectCodes.WrongPhase, Play(r, new MoveRecord { PlayerId = A, Kind = MoveKinds.Relocate, OrganismId = own.OrganismId, X = own.X, Y = own.Y, AtMs = T0 + 2000 }).Code);
+
+            Assert.Null(Play(r, Roll(A, 1)));
+            Assert.Equal(RejectCodes.WrongPhase, Play(r, new MoveRecord { PlayerId = A, Kind = MoveKinds.Relocate, OrganismId = own.OrganismId, X = own.X, Y = own.Y, AtMs = T0 + 2000 }).Code);
         }
 
-        // ---------- Tiempo, abandono, fin ----------
+        // ---------- Reloj y abandono (siempre con el reloj del servidor) ----------
 
         [Fact]
-        public void Turn_times_out_on_the_server_clock()
+        public void An_expired_turn_becomes_a_recorded_timeout_at_the_exact_deadline()
         {
-            var (e, _) = NewStartedMatch();
-            Assert.Empty(e.Tick(T0 + 29_999).Messages);
-            var r = e.Tick(T0 + 30_000);
-            Assert.Equal(2, r.Messages.Count);
-            Assert.Equal("timeout", ((TurnChangedMsg)r.Messages[0].Payload).Reason);
-            Assert.Equal(B, e.CurrentPlayerId);
+            var r = NewRecord();
+            var engine = MatchEngine.Replay(r);
+            Assert.False(engine.TurnExpired(T0 + 29_999));
+            Assert.True(engine.TurnExpired(T0 + 30_000));
+
+            var generated = engine.ResolveExpiredTurns(T0 + 45_000);
+            var timeout = Assert.Single(generated);
+            Assert.Equal(MoveKinds.Timeout, timeout.Kind);
+            Assert.Equal(A, timeout.PlayerId);
+            Assert.Equal(T0 + 30_000, timeout.AtMs);       // el plazo, no "ahora": el replay no depende de cuándo se consultó
+            Assert.Equal(B, engine.CurrentPlayerId);
+            Assert.Equal(T0 + 60_000, engine.DeadlineMs);  // el turno del rival empieza donde terminó el anterior
         }
 
         [Fact]
-        public void A_late_command_is_rejected_because_the_turn_already_expired()
+        public void A_late_move_is_rejected_because_the_turn_already_expired()
         {
-            var (e, rng) = NewStartedMatch();
-            rng.Forced.Enqueue(1);
-            var r = e.RollDice(A, T0 + 31_000);
-            Assert.Equal(RejectCodes.NotYourTurn, r.Rejection.Code);
-            Assert.Equal(2, r.Messages.Count); // pero el cambio de turno por timeout sí se avisa
+            var r = NewRecord();
+            Assert.Equal(RejectCodes.NotYourTurn, Play(r, Roll(A, 1, T0 + 31_000)).Code);
         }
 
         [Fact]
-        public void Three_consecutive_timeouts_mean_abandonment()
+        public void Recorded_timeouts_replay_to_the_same_state()
         {
-            var (e, rng) = NewStartedMatch();
+            var r = NewRecord();
+            var engine = MatchEngine.Replay(r);
+            r.Moves.AddRange(engine.ResolveExpiredTurns(T0 + 45_000));
+
+            var replayed = MatchEngine.Replay(r);
+            Assert.Equal(B, replayed.CurrentPlayerId);
+            Assert.Equal(T0 + 60_000, replayed.DeadlineMs);
+        }
+
+        [Fact]
+        public void Three_consecutive_timeouts_mean_abandonment_and_the_rival_wins()
+        {
+            var r = NewRecord();
             long t = T0;
-            // A deja pasar 3 turnos; B juega normalmente entre medias.
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < 3; i++)
             {
-                t += 31_000; e.Tick(t);                  // vence A
-                Roll(e, rng, B, 1, t); e.Shoot(B, i, 0, t); // B juega y pasa el turno a A
+                var engine = MatchEngine.Replay(r);
+                r.Moves.AddRange(engine.ResolveExpiredTurns(t + 31_000));     // alice no juega
+                t += 31_000;
+                if (i < 2) SafeTurn(r, B, i, t + 1000);                       // bob sí
+                t += 3000;
             }
-            t += 31_000;
-            var r = e.Tick(t);
-            Assert.Equal(MatchPhase.Finished, e.Phase);
-            Assert.Equal(B, e.WinnerId);
-            Assert.Equal("abandoned", e.EndReason);
-            Assert.Contains(r.Messages, m => m.Type == MessageTypes.GameOver);
+
+            var view = View(r, B);
+            Assert.Equal("Finished", view.Phase);
+            Assert.Equal(B, view.WinnerId);
+            Assert.Equal("abandoned", view.EndReason);
         }
 
         [Fact]
-        public void Leaving_gives_the_win_to_the_rival()
+        public void If_both_players_are_idle_nobody_wins()
         {
-            var (e, _) = NewStartedMatch();
-            var r = e.Leave(A, T0);
-            Assert.Equal(B, e.WinnerId);
-            Assert.Equal("forfeit", e.EndReason);
-            Assert.Equal(2, r.Messages.Count(m => m.Type == MessageTypes.GameOver));
-            Assert.Equal(RejectCodes.MatchFinished, e.RollDice(B, T0).Rejection.Code);
+            var r = NewRecord();
+            var engine = MatchEngine.Replay(r);
+            r.Moves.AddRange(engine.ResolveExpiredTurns(T0 + 10 * 60_000));
+
+            var view = View(r, A);
+            Assert.Equal("Finished", view.Phase);
+            Assert.Null(view.WinnerId);
+            Assert.Equal("abandoned_both", view.EndReason);
+        }
+
+        [Fact]
+        public void Playing_resets_the_idle_counter()
+        {
+            var r = NewRecord();
+            long t = T0;
+            // alice se queda dormida dos veces, pero juega en medio: nunca llega a 3 seguidas.
+            for (int round = 0; round < 3; round++)
+            {
+                var engine = MatchEngine.Replay(r);
+                r.Moves.AddRange(engine.ResolveExpiredTurns(t + 31_000));  // timeout de alice
+                t += 31_000;
+                SafeTurn(r, B, round, t + 1000);                            // bob juega
+                t += 3000;
+                if (round == 1) { SafeTurn(r, A, round + 20, t + 1000); t += 3000; SafeTurn(r, B, round + 30, t + 1000); t += 3000; }
+            }
+            Assert.NotEqual("Finished", View(r, A).Phase);
+        }
+
+        // ---------- Fin de la partida ----------
+
+        [Fact]
+        public void Leaving_gives_the_win_to_the_rival_even_out_of_turn()
+        {
+            var r = NewRecord();
+            Assert.Null(Play(r, Leave(B)));
+            var view = View(r, A);
+            Assert.Equal("Finished", view.Phase);
+            Assert.Equal(A, view.WinnerId);
+            Assert.Equal("forfeit", view.EndReason);
         }
 
         [Fact]
         public void Sinking_everything_ends_the_game_and_reveals_both_boards()
         {
-            var (e, rng) = NewStartedMatch();
-            int xa = 0, ya = 0, xb = 0, yb = 0;
-            EngineResult last = null;
-            for (int guard = 0; guard < 400 && e.Phase != MatchPhase.Finished; guard++)
+            var r = NewRecord();
+            var targets = TestBoards.OrganismCells(View(r, B).YourBoard);
+            Assert.Null(View(r, A).OpponentBoard);
+
+            long t = T0;
+            for (int i = 0; i < targets.Count; i++)
             {
-                bool aTurn = e.CurrentPlayerId == A;
-                string me = aTurn ? A : B;
-                Roll(e, rng, me, 5); // dos disparos por turno
-                for (int s = 0; s < 2 && e.Phase == MatchPhase.Shooting; s++)
-                {
-                    ref int x = ref (aTurn ? ref xa : ref xb);
-                    ref int y = ref (aTurn ? ref ya : ref yb);
-                    last = e.Shoot(me, x, y, T0);
-                    Assert.True(last.Ok, last.Rejection?.Message);
-                    if (++y == 6) { y = 0; x++; }
-                }
+                Assert.Null(Play(r, Roll(A, 1, t + 1000)));
+                Assert.Null(Play(r, Shoot(A, targets[i].X, targets[i].Y, t + 1001)));
+                if (i < targets.Count - 1) SafeTurn(r, B, i, t + 2000);
+                t += 5000;
             }
-            Assert.Equal(MatchPhase.Finished, e.Phase);
-            Assert.Equal("all_sunk", e.EndReason);
-            var over = last.Messages.First(m => m.Type == MessageTypes.GameOver);
-            var msg = (GameOverMsg)over.Payload;
-            Assert.Equal(2, msg.Boards.Count);
-            Assert.Equal(5, msg.Boards[A].Placements.Count);
-        }
 
-        // ---------- Persistencia ----------
-
-        [Fact]
-        public void State_survives_a_json_round_trip()
-        {
-            var (e, rng) = NewStartedMatch();
-            Roll(e, rng, A, 6);
-            e.Shoot(A, 2, 2, T0);
-            string json = JsonConvert.SerializeObject(e.ToSnapshot());
-
-            var restored = MatchEngine.FromSnapshot(JsonConvert.DeserializeObject<MatchSnapshot>(json), new MatchSettings(), new ScriptedRandom());
-            Assert.NotNull(restored);
-            Assert.Equal(JsonConvert.SerializeObject(e.ViewFor(A)), JsonConvert.SerializeObject(restored.ViewFor(A)));
-            Assert.Equal(JsonConvert.SerializeObject(e.ViewFor(B)), JsonConvert.SerializeObject(restored.ViewFor(B)));
-
-            // y la partida sigue: queda 1 disparo de A
-            Assert.True(restored.Shoot(A, 3, 3, T0).Ok);
-            Assert.Equal(B, restored.CurrentPlayerId);
+            var a = View(r, A);
+            var b = View(r, B);
+            Assert.Equal("Finished", a.Phase);
+            Assert.Equal(A, a.WinnerId);
+            Assert.Equal("all_sunk", a.EndReason);
+            Assert.Equal(5, a.OpponentBoard.Placements.Count);   // recién al final se revelan
+            Assert.Equal(5, b.OpponentBoard.Placements.Count);
         }
 
         [Fact]
-        public void Corrupt_snapshot_is_detected()
+        public void Nothing_can_be_played_after_the_game_ends()
         {
-            var (e, _) = NewStartedMatch();
-            var snap = e.ToSnapshot();
-            snap.Players[0].Board.Placements[0].X = 999;
-            Assert.Null(MatchEngine.FromSnapshot(snap, new MatchSettings(), new ScriptedRandom()));
+            var r = NewRecord();
+            Assert.Null(Play(r, Leave(A)));
+            Assert.Equal(RejectCodes.MatchFinished, Play(r, Roll(B, 1)).Code);
+            Assert.Equal(RejectCodes.MatchFinished, Play(r, Leave(B)).Code);
         }
     }
 }

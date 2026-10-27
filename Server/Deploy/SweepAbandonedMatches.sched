@@ -1,0 +1,12 @@
+{
+  "$schema": "https://ugs-config-schemas.unity3d.com/v1/schedules.schema.json",
+  "Configs": {
+    "MicrobeOpsSweepSchedule": {
+      "EventName": "microbeops-sweep-tick",
+      "ScheduleType": "recurring",
+      "Schedule": "*/5 * * * *",
+      "PayloadVersion": 1,
+      "Payload": "{}"
+    }
+  }
+}

@@ -1,131 +1,323 @@
 using MicrobeOps.Core;
-using Newtonsoft.Json;
 
 namespace MicrobeOps.Module
 {
-    // Cómo se envía un push a un jugador y cómo se programa el vencimiento del turno.
-    // Son interfaces para que MatchService se pueda probar sin Cloud Code.
-    public interface IMessageSink
+    public sealed class SweepResult
     {
-        Task SendAsync(string playerId, string messageType, string message);
+        public int Scanned;
+        public int Resolved;
+        public int Removed;
     }
 
-    public interface ITurnTimer
-    {
-        // Cancela el temporizador anterior (si existe) y programa uno nuevo.
-        Task ScheduleAsync(int turnNumber, TimeSpan delay);
-        Task CancelAsync();
-    }
-
-    // Une el MatchEngine (reglas) con el mundo exterior: guarda/recupera el estado como JSON,
-    // convierte cada Outgoing en un push y reprograma el temporizador de turno.
-    // El estado vive en el campo público StateJson del módulo (Stateful Cloud Code).
+    // Une las reglas (MatchEngine) con el almacenamiento y los avisos. Es el patrón de TTTXO:
+    //
+    //   cargar registro -> reproducir -> resolver turnos vencidos -> validar y aplicar la jugada
+    //   -> guardar (con write lock) -> avisar al rival con un push liviano -> devolver MI vista
+    //
+    // No hay estado en memoria entre llamadas: cada función de Cloud Code puede ejecutarse en una
+    // instancia distinta. Todo lo que importa vive en el registro.
     public sealed class MatchService
     {
-        private readonly MatchSettings settings;
+        private const int MaxAttempts = 5;
+
+        private readonly IMatchStore store;
+        private readonly IPlayerNotifier notifier;
         private readonly IRandom rng;
         private readonly Func<long> clockMs;
-        private MatchEngine engine;
+        private readonly MatchSettings settings;
 
-        public string StateJson { get; private set; }
-
-        public MatchService(string stateJson, MatchSettings settings, IRandom rng, Func<long> clockMs)
+        public MatchService(IMatchStore store, IPlayerNotifier notifier, IRandom rng, Func<long> clockMs, MatchSettings settings = null)
         {
-            StateJson = stateJson;
-            this.settings = settings ?? new MatchSettings();
+            this.store = store;
+            this.notifier = notifier;
             this.rng = rng;
             this.clockMs = clockMs;
+            this.settings = settings ?? new MatchSettings();
         }
 
         public static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        // ---------- Órdenes de los jugadores ----------
-
-        public Task<CommandReply> JoinAsync(string playerId, IMessageSink sink, ITurnTimer timer) =>
-            RunAsync(sink, timer, e => e.Join(playerId, clockMs()), createIfMissing: true);
-
-        public Task<CommandReply> RollDiceAsync(string playerId, IMessageSink sink, ITurnTimer timer) =>
-            RunAsync(sink, timer, e => e.RollDice(playerId, clockMs()));
-
-        public Task<CommandReply> ShootAsync(string playerId, int x, int y, IMessageSink sink, ITurnTimer timer) =>
-            RunAsync(sink, timer, e => e.Shoot(playerId, x, y, clockMs()));
-
-        public Task<CommandReply> RelocateAsync(string playerId, string organismId, int x, int y, int rotation, IMessageSink sink, ITurnTimer timer) =>
-            RunAsync(sink, timer, e => e.Relocate(playerId, organismId, x, y, rotation, clockMs()));
-
-        public Task<CommandReply> LeaveAsync(string playerId, IMessageSink sink, ITurnTimer timer) =>
-            RunAsync(sink, timer, e => e.Leave(playerId, clockMs()));
-
-        // Lo llama el temporizador del servidor cuando vence un turno.
-        public Task<CommandReply> TurnTimeoutAsync(int turnNumber, IMessageSink sink, ITurnTimer timer) =>
-            RunAsync(sink, timer, e => e.TurnNumber == turnNumber ? e.Tick(clockMs()) : new EngineResult { Seq = e.Seq });
-
-        // Consulta de estado (reconexión o hueco detectado en los seq). Primero aplica un posible timeout.
-        public async Task<PlayerView> GetStateAsync(string playerId, IMessageSink sink, ITurnTimer timer)
+        public GameConfigDto GetConfig() => new GameConfigDto
         {
-            if (!TryLoad(false)) return null;
-            await RunAsync(sink, timer, e => e.Tick(clockMs()));
-            return engine.ViewFor(playerId);
+            ProtocolVersion = GameProtocol.Version,
+            Cols = settings.Cols,
+            Rows = settings.Rows,
+            TurnSeconds = settings.TurnSeconds,
+            PollSeconds = 5,
+        };
+
+        // ---------- CreateMatch (idempotente por handoffId) ----------
+
+        // Cualquiera de los dos jugadores puede llamarla, en cualquier orden y varias veces. El primero crea una
+        // partida "esperando"; el segundo la completa y la partida arranca. Ninguno afirma quién es el otro:
+        // cada uno aporta solo su propio context.PlayerId, que Cloud Code ya autenticó.
+        // Con Matchmaker, aquí se comprobaría además que el ticket resolvió a este handoffId.
+        public async Task<MatchResponse> CreateMatchAsync(string playerId, string handoffId)
+        {
+            if (string.IsNullOrWhiteSpace(playerId) || string.IsNullOrWhiteSpace(handoffId))
+                return Fail(RejectCodes.InvalidMove, "Falta el identificador de la sala.");
+
+            string matchId = MatchIds.FromHandoff(handoffId.Trim());
+
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var stored = await store.LoadAsync(matchId);
+
+                if (stored == null)
+                {
+                    // Si el otro jugador crea a la vez, uno de los dos registros pisa al otro: por eso no
+                    // devolvemos todavía; volvemos a leer y, si no estamos, nos unimos al que quedó.
+                    var created = new MatchRecord
+                    {
+                        MatchId = matchId,
+                        HandoffId = handoffId.Trim(),
+                        Settings = settings,
+                        CreatedAtMs = clockMs(),
+                    };
+                    created.PlayerIds.Add(playerId);
+                    await store.SaveAsync(created, null);
+                    await store.IndexAddAsync(MatchIds.DayUtc(created.CreatedAtMs), matchId);
+                    continue;
+                }
+
+                var record = stored.Record;
+                if (record.PlayerIds.Contains(playerId))
+                    return Ok(record, playerId);
+
+                if (record.PlayerIds.Count >= 2)
+                    return Fail(RejectCodes.RoomFull, "La partida ya está completa.");
+
+                if (record.PlayerIds.Count == 0)
+                {
+                    // Sala cancelada (el creador salió antes de que llegara nadie): este jugador pasa a ser el primero.
+                    record.PlayerIds.Add(playerId);
+                    record.CreatedAtMs = clockMs();
+                    try { await store.SaveAsync(record, stored.WriteLock); }
+                    catch (WriteConflictException) { continue; }
+                    await store.IndexAddAsync(MatchIds.DayUtc(record.CreatedAtMs), matchId);
+                    return Ok(record, playerId);
+                }
+
+                // Segundo jugador: orden determinista (ids ordenados; el primero son los Glóbulos Blancos y empieza).
+                var firstPlayer = record.PlayerIds[0];
+                record.PlayerIds.Add(playerId);
+                record.PlayerIds.Sort(StringComparer.Ordinal);
+                record.StartedAtMs = clockMs();
+                record.PlacementSeed = rng.Next(0, int.MaxValue); // SECRETA: se guarda solo en el registro
+
+                try
+                {
+                    await store.SaveAsync(record, stored.WriteLock);
+                }
+                catch (WriteConflictException)
+                {
+                    continue;
+                }
+
+                await notifier.NotifyAsync(firstPlayer, matchId);
+                return Ok(record, playerId);
+            }
+
+            return Fail(RejectCodes.Busy, "Demasiada actividad simultánea; vuelve a intentarlo.");
+        }
+
+        // ---------- PlayMove ----------
+
+        // 'playerId' SIEMPRE es context.PlayerId (autenticado por Cloud Code), nunca un dato del cliente.
+        // El cliente solo dice QUÉ quiere hacer; el dado (Face) lo sortea el servidor.
+        public async Task<MatchResponse> PlayMoveAsync(string playerId, string matchId, string kind, int x, int y, string organismId, int rotation)
+        {
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var stored = await Load(matchId);
+                if (stored == null) return Fail(RejectCodes.MatchNotFound, "La partida no existe.");
+
+                var record = stored.Record;
+                MatchEngine engine;
+                try { engine = MatchEngine.Replay(record); }
+                catch (InvalidOperationException e) { return Fail(RejectCodes.InvalidMove, e.Message); }
+
+                if (!record.PlayerIds.Contains(playerId))
+                    return Fail(RejectCodes.NotInMatch, "No estás en esta partida.");
+
+                long now = clockMs();
+
+                // 1) Turnos vencidos: se registran como jugadas 'timeout' ANTES de mirar la jugada del cliente.
+                var generated = engine.ResolveExpiredTurns(now);
+                record.Moves.AddRange(generated);
+
+                // 2) La jugada del cliente.
+                Rejection rejection = null;
+                bool applied = false;
+
+                if (kind == MoveKinds.Leave && engine.Phase == MatchPhase.WaitingForPlayers)
+                {
+                    record.PlayerIds.Remove(playerId); // nadie más había llegado: se cancela la sala
+                    applied = true;
+                }
+                else
+                {
+                    var move = BuildMove(playerId, kind, now, x, y, organismId, rotation, out rejection);
+                    if (move != null)
+                    {
+                        rejection = engine.Apply(move);
+                        if (rejection == null) { record.Moves.Add(move); applied = true; }
+                    }
+                }
+
+                // 3) Guardar si algo cambió (incluso si la jugada se rechazó, pero hubo timeouts).
+                if (applied || generated.Count > 0)
+                {
+                    try { await store.SaveAsync(record, stored.WriteLock); }
+                    catch (WriteConflictException) { continue; } // el rival escribió a la vez: reintenta con datos frescos
+
+                    if (engine.IsFinished || record.PlayerIds.Count == 0)
+                        await store.IndexRemoveAsync(MatchIds.DayUtc(record.CreatedAtMs), record.MatchId);
+
+                    await NotifyRival(record, playerId);
+                }
+
+                var view = engine.ViewFor(playerId, clockMs());
+                return rejection == null
+                    ? new MatchResponse { Ok = true, State = view }
+                    : new MatchResponse { Ok = false, Code = rejection.Code, Message = rejection.Message, State = view };
+            }
+
+            return Fail(RejectCodes.Busy, "Demasiada actividad simultánea; vuelve a intentarlo.");
+        }
+
+        // El cliente nunca puede mandar un 'timeout' ni una cara de dado: solo estas tres acciones y 'leave'.
+        private MoveRecord BuildMove(string playerId, string kind, long now, int x, int y, string organismId, int rotation, out Rejection rejection)
+        {
+            rejection = null;
+            var move = new MoveRecord { PlayerId = playerId, Kind = kind, AtMs = now };
+            switch (kind)
+            {
+                case MoveKinds.Roll:
+                    move.Face = rng.Next(1, Dice.Faces + 1);   // SORTEADO AQUÍ, en el servidor
+                    return move;
+                case MoveKinds.Shoot:
+                    move.X = x; move.Y = y;
+                    return move;
+                case MoveKinds.Relocate:
+                    move.OrganismId = organismId; move.X = x; move.Y = y; move.Rotation = rotation;
+                    return move;
+                case MoveKinds.Leave:
+                    return move;
+                default:
+                    rejection = new Rejection { Code = RejectCodes.UnknownMove, Message = "Jugada desconocida." };
+                    return null;
+            }
+        }
+
+        // ---------- GetMatchState ----------
+
+        // Reconexión, refresco tras un push y sondeo de respaldo. Además resuelve, con el reloj del servidor,
+        // los turnos vencidos y el abandono (reactivo, sin un temporizador por partida).
+        public async Task<MatchResponse> GetMatchStateAsync(string playerId, string matchId)
+        {
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                var stored = await Load(matchId);
+                if (stored == null) return Fail(RejectCodes.MatchNotFound, "La partida no existe.");
+
+                var record = stored.Record;
+                if (!record.PlayerIds.Contains(playerId))
+                    return Fail(RejectCodes.NotInMatch, "No estás en esta partida.");
+
+                MatchEngine engine;
+                try { engine = MatchEngine.Replay(record); }
+                catch (InvalidOperationException e) { return Fail(RejectCodes.InvalidMove, e.Message); }
+
+                var generated = engine.ResolveExpiredTurns(clockMs());
+                if (generated.Count > 0)
+                {
+                    record.Moves.AddRange(generated);
+                    try { await store.SaveAsync(record, stored.WriteLock); }
+                    catch (WriteConflictException) { continue; }
+
+                    if (engine.IsFinished)
+                        await store.IndexRemoveAsync(MatchIds.DayUtc(record.CreatedAtMs), record.MatchId);
+                    await NotifyRival(record, playerId);
+                }
+
+                return new MatchResponse { Ok = true, State = engine.ViewFor(playerId, clockMs()) };
+            }
+
+            return Fail(RejectCodes.Busy, "Demasiada actividad simultánea; vuelve a intentarlo.");
+        }
+
+        // ---------- Barrido de abandonos (trigger programado) ----------
+
+        // Cierra las partidas en las que NADIE volvió a consultar: sin esto, si los dos abandonan, quedarían abiertas.
+        public async Task<SweepResult> SweepAsync(int maxMatches)
+        {
+            var result = new SweepResult();
+            long now = clockMs();
+            var days = new[] { MatchIds.DayUtc(now), MatchIds.DayUtc(now - 24L * 3600 * 1000) };
+
+            foreach (var day in days)
+            {
+                foreach (var matchId in await store.IndexListAsync(day))
+                {
+                    if (result.Scanned >= maxMatches) return result;
+                    result.Scanned++;
+
+                    var stored = await store.LoadAsync(matchId);
+                    if (stored == null) { await store.IndexRemoveAsync(day, matchId); result.Removed++; continue; }
+
+                    var record = stored.Record;
+                    MatchEngine engine;
+                    try { engine = MatchEngine.Replay(record); }
+                    catch (InvalidOperationException) { await store.IndexRemoveAsync(day, matchId); result.Removed++; continue; }
+
+                    var generated = engine.ResolveExpiredTurns(now);
+                    if (generated.Count > 0)
+                    {
+                        record.Moves.AddRange(generated);
+                        try { await store.SaveAsync(record, stored.WriteLock); }
+                        catch (WriteConflictException) { continue; } // alguien la está usando: ya no está abandonada
+                        result.Resolved++;
+                        foreach (var p in record.PlayerIds) await Safe(() => notifier.NotifyAsync(p, matchId));
+                    }
+
+                    bool abandonedWaiting = engine.Phase == MatchPhase.WaitingForPlayers && now - record.CreatedAtMs > 10 * 60 * 1000;
+                    if (engine.IsFinished || abandonedWaiting || record.PlayerIds.Count == 0)
+                    {
+                        await store.IndexRemoveAsync(day, matchId);
+                        result.Removed++;
+                    }
+                }
+            }
+            return result;
         }
 
         // ---------- Internos ----------
 
-        private bool TryLoad(bool createIfMissing)
+        private Task<StoredMatch> Load(string matchId) =>
+            string.IsNullOrWhiteSpace(matchId) ? Task.FromResult<StoredMatch>(null) : store.LoadAsync(matchId);
+
+        private async Task NotifyRival(MatchRecord record, string callerId)
         {
-            if (engine != null) return true;
-
-            if (!string.IsNullOrEmpty(StateJson))
-            {
-                var snap = JsonConvert.DeserializeObject<MatchSnapshot>(StateJson);
-                engine = snap == null ? null : MatchEngine.FromSnapshot(snap, settings, rng);
-                return engine != null;
-            }
-
-            if (!createIfMissing) return false;
-            engine = new MatchEngine(Guid.NewGuid().ToString("N"), settings, rng);
-            return true;
+            foreach (var p in record.PlayerIds)
+                if (p != callerId) await Safe(() => notifier.NotifyAsync(p, record.MatchId));
         }
 
-        private async Task<CommandReply> RunAsync(IMessageSink sink, ITurnTimer timer, Func<MatchEngine, EngineResult> command, bool createIfMissing = false)
+        // Un push que falla NUNCA hace fallar la jugada: ya está guardada y el cliente sondea como respaldo.
+        // Recibe una función (no un Task) para atrapar también las excepciones lanzadas antes del primer await.
+        private static async Task Safe(Func<Task> action)
         {
-            if (!TryLoad(createIfMissing))
-                return new CommandReply { Ok = false, Code = RejectCodes.MatchNotFound, Message = "La partida no existe." };
-
-            int turnBefore = engine.TurnNumber;
-            var phaseBefore = engine.Phase;
-
-            var result = command(engine);
-
-            // 1) Guardar ANTES de enviar: si un push falla, el estado ya es el correcto
-            //    y el cliente puede recuperarlo con GetGameState.
-            StateJson = JsonConvert.SerializeObject(engine.ToSnapshot());
-
-            // 2) Un push por mensaje saliente.
-            foreach (var m in result.Messages)
-            {
-                var envelope = new MessageEnvelope { MatchId = engine.MatchId, Seq = m.Seq, Type = m.Type, Payload = m.Payload };
-                await sink.SendAsync(m.ToPlayerId, m.Type, JsonConvert.SerializeObject(envelope));
-            }
-
-            // 3) Vencimiento del turno en el servidor (el cliente solo muestra la cuenta atrás).
-            if (engine.Phase == MatchPhase.Finished)
-            {
-                await timer.CancelAsync();
-            }
-            else if (engine.TurnNumber != turnBefore || (phaseBefore == MatchPhase.WaitingForPlayers && engine.Phase != phaseBefore))
-            {
-                // +1 s de margen para que el reloj del servidor ya haya superado el límite.
-                await timer.ScheduleAsync(engine.TurnNumber, TimeSpan.FromSeconds(settings.TurnSeconds + 1));
-            }
-
-            return new CommandReply
-            {
-                Ok = result.Ok,
-                Code = result.Rejection?.Code,
-                Message = result.Rejection?.Message,
-                Seq = result.Seq,
-                MatchId = engine.MatchId,
-            };
+            try { await action(); }
+            catch (Exception) { /* se registra en la capa de Cloud Code */ }
         }
+
+        private MatchResponse Ok(MatchRecord record, string playerId)
+        {
+            var engine = MatchEngine.Replay(record);
+            return new MatchResponse { Ok = true, State = engine.ViewFor(playerId, clockMs()) };
+        }
+
+        private static MatchResponse Fail(string code, string message) =>
+            new MatchResponse { Ok = false, Code = code, Message = message };
     }
 }
