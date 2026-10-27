@@ -3,21 +3,31 @@ using System.Collections.Generic;
 namespace MicrobeOps.Core
 {
     // ---------------------------------------------------------------------
-    // Protocolo de mensajes de Microbe_OPS (ver Server/PROTOCOLO.md).
-    // Cliente -> servidor: endpoints del módulo de Cloud Code (CommandReply).
-    // Servidor -> cliente: push de Cloud Code; MessageType = uno de MessageTypes
-    // y Message = MessageEnvelope serializado a JSON.
+    // Protocolo de Microbe_OPS (ver Server/PROTOCOLO.md). Patrón TTTXO:
+    //   Cliente -> servidor : CreateMatch / PlayMove / GetMatchState (endpoints de Cloud Code)
+    //   Servidor -> cliente : push liviano { type: "match_updated", matchId } (nunca lleva el estado)
+    //   El estado de la partida es una LISTA DE JUGADAS (MatchRecord) que el servidor reproduce.
     // ---------------------------------------------------------------------
+
+    public static class GameProtocol
+    {
+        // Se sube SOLO cuando cambia el contrato de un endpoint. Una sola constante: como Core
+        // se compila en el cliente y en el módulo, ambos lados siempre ven el mismo número.
+        public const int Version = 1;
+    }
 
     public static class MessageTypes
     {
-        public const string GameStarted = "game_started";
-        public const string DiceRolled = "dice_rolled";
-        public const string ShotResolved = "shot_resolved";
-        public const string Relocated = "relocated";                 // solo al jugador que reubica
-        public const string OpponentRelocated = "opponent_relocated"; // solo al rival (sin posición)
-        public const string TurnChanged = "turn_changed";
-        public const string GameOver = "game_over";
+        public const string MatchUpdated = "match_updated";
+    }
+
+    public static class MoveKinds
+    {
+        public const string Roll = "roll";
+        public const string Shoot = "shoot";
+        public const string Relocate = "relocate";
+        public const string Timeout = "timeout";   // solo lo genera el servidor
+        public const string Leave = "leave";
     }
 
     public static class RejectCodes
@@ -34,27 +44,41 @@ namespace MicrobeOps.Core
         public const string InvalidRelocation = "InvalidRelocation";
         public const string MatchFinished = "MatchFinished";
         public const string MatchNotFound = "MatchNotFound";
+        public const string UnknownMove = "UnknownMove";
+        public const string InvalidMove = "InvalidMove";
+        public const string ProtocolMismatch = "ProtocolMismatch";
+        public const string Busy = "Busy";
     }
 
-    // Sobre de todos los mensajes push. 'Seq' crece de uno en uno para cada jugador:
-    // si el cliente ve un salto, perdió un mensaje y debe pedir GetGameState.
-    public class MessageEnvelope
+    // ---------- Registro de la partida (lo que se guarda en Cloud Save, SOLO el servidor) ----------
+
+    // Una jugada. El dado queda registrado con su cara (Face): el cliente nunca la envía,
+    // la sortea el servidor, y gracias a guardarla el replay reproduce la misma partida.
+    public class MoveRecord
     {
-        public string MatchId;
-        public int Seq;
-        public string Type;
-        public object Payload;
+        public string PlayerId;
+        public string Kind;          // MoveKinds.*
+        public long AtMs;            // reloj del servidor (ms Unix); en un 'timeout' es el instante exacto del plazo
+        public int Face;             // roll: 1..10
+        public int X;                // shoot / relocate
+        public int Y;
+        public string OrganismId;    // relocate
+        public int Rotation;         // relocate
     }
 
-    // Respuesta de cada endpoint (cliente -> servidor). El resultado "oficial"
-    // llega por push; esto solo confirma si la orden fue aceptada.
-    public class CommandReply
+    // CONTIENE INFORMACIÓN OCULTA (semilla de colocación y jugadas de reubicar):
+    // debe guardarse en Cloud Save con clase de acceso PRIVATE y jamás enviarse a un cliente.
+    public class MatchRecord
     {
-        public bool Ok;
-        public string Code;     // RejectCodes.* cuando Ok == false
-        public string Message;  // texto legible
-        public int Seq;         // último seq emitido por el servidor tras esta orden
+        public int ProtocolVersion = GameProtocol.Version;
         public string MatchId;
+        public string HandoffId;
+        public MatchSettings Settings = new MatchSettings();
+        public List<string> PlayerIds = new List<string>();   // al completarse: ordenados; el primero son los Glóbulos Blancos y empieza
+        public long CreatedAtMs;
+        public long StartedAtMs;     // 0 hasta que se une el segundo jugador
+        public int PlacementSeed;    // SECRETA: con ella se reconstruyen los dos tableros
+        public List<MoveRecord> Moves = new List<MoveRecord>();
     }
 
     // ---------- Piezas reutilizables ----------
@@ -84,29 +108,6 @@ namespace MicrobeOps.Core
         public List<ShotMark> Shots = new List<ShotMark>();
     }
 
-    // ---------- Payloads push ----------
-
-    public class GameStartedMsg
-    {
-        public string YouId;
-        public Side YourSide;
-        public string OpponentId;
-        public int Cols;
-        public int Rows;
-        public string CurrentPlayerId;
-        public int TurnNumber;
-        public long DeadlineMs;
-        public BoardSnapshot YourBoard; // solo tu tablero: el del rival nunca viaja
-    }
-
-    public class DiceRolledMsg
-    {
-        public string PlayerId;
-        public int Face;
-        public string Result;   // nombre de DiceResult
-        public int Shots;
-    }
-
     public class ShotCellDto
     {
         public int X;
@@ -116,88 +117,74 @@ namespace MicrobeOps.Core
         public string SunkOrganismName;
     }
 
-    public class ShotResolvedMsg
+    // Lo que ocurrió en la jugada nº Index, tal como lo pueden ver LOS DOS jugadores.
+    // Una reubicación NO incluye posiciones; un disparo sí incluye su resultado.
+    public class PublicEvent
     {
-        public string ShooterId;
-        public string TargetId;
-        public List<ShotCellDto> Cells = new List<ShotCellDto>();
-        public int ShotsLeft;
-    }
-
-    public class RelocatedMsg
-    {
+        public int Index;            // 1..N, = posición de la jugada en el registro
+        public string Kind;          // MoveKinds.*
         public string PlayerId;
-        public string OrganismId;
-        public int X;
-        public int Y;
-        public int Rotation;
+        public int Face;             // roll
+        public string DiceResult;    // roll
+        public int Shots;            // roll: disparos concedidos
+        public string TargetId;      // shoot
+        public List<ShotCellDto> Cells;  // shoot
     }
 
-    public class OpponentRelocatedMsg
-    {
-        public string PlayerId; // solo se informa que ocurrió; la nueva posición es secreta
-    }
+    // ---------- Respuestas de los endpoints ----------
 
-    public class TurnChangedMsg
+    // Estado de la partida proyectado para UN jugador (GetMatchState y respuesta de PlayMove/CreateMatch).
+    // Nunca contiene el tablero del rival hasta que la partida termina.
+    public class MatchStateDto
     {
-        public string CurrentPlayerId;
-        public int TurnNumber;
-        public long DeadlineMs;
-        public string Reason;   // shots_done | relocated | timeout | no_shots
-    }
-
-    public class GameOverMsg
-    {
-        public string WinnerId;
-        public string Reason;   // all_sunk | forfeit | abandoned
-        public Dictionary<string, BoardSnapshot> Boards = new Dictionary<string, BoardSnapshot>(); // al final sí se revelan
-    }
-
-    // Estado completo desde el punto de vista de UN jugador (GetGameState / reconexión).
-    public class PlayerView
-    {
+        public int ProtocolVersion;
         public string MatchId;
-        public int Seq;
-        public string Phase;
+        public string Phase;                   // MatchPhase
         public string YouId;
         public Side YourSide;
-        public string OpponentId;
+        public string OpponentId;              // null mientras se espera al rival
         public string CurrentPlayerId;
         public int TurnNumber;
         public long DeadlineMs;
         public int RemainingShots;
-        public string DiceResult;              // null si aún no se ha tirado
+        public string DiceResult;              // null si aún no se ha tirado en este turno
         public int Cols;
         public int Rows;
-        public BoardSnapshot YourBoard;        // null mientras espera rival
+        public int TurnSeconds;
+        public int MoveCount;                  // nº de jugadas del registro: el cliente compara para saber qué es nuevo
+        public BoardSnapshot YourBoard;        // tu tablero completo; null mientras espera rival
         public List<ShotMark> OpponentShots = new List<ShotMark>();   // lo que ya disparaste al rival
         public List<string> OpponentSunk = new List<string>();        // ids de organismos rivales hundidos
+        public List<PublicEvent> Events = new List<PublicEvent>();    // historial público
         public string WinnerId;
-        public string EndReason;
+        public string EndReason;               // all_sunk | forfeit | abandoned | abandoned_both
+        public BoardSnapshot OpponentBoard;    // SOLO cuando la partida terminó
+        public long ServerNowMs;               // para calcular el desfase de reloj
     }
 
-    // ---------- Persistencia (estado de la partida en el módulo) ----------
-
-    public class PlayerSnapshot
+    // PlayMove no lanza excepción si la jugada es inválida: devuelve el motivo y el estado actual,
+    // para que el cliente se resincronice (p. ej. tras NotYourTurn).
+    public class MatchResponse
     {
-        public string Id;
-        public Side Side;
-        public int ConsecutiveTimeouts;
-        public BoardSnapshot Board;
+        public bool Ok;
+        public string Code;     // RejectCodes.* cuando Ok == false
+        public string Message;
+        public MatchStateDto State;
     }
 
-    public class MatchSnapshot
+    public class GameConfigDto
     {
-        public string MatchId;
-        public int Seq;
-        public int TurnNumber;
-        public int Phase;
-        public int CurrentIndex;
-        public int Dice = -1;       // -1: sin tirar
-        public int RemainingShots;
-        public long DeadlineMs;
-        public string WinnerId;
-        public string EndReason;
-        public List<PlayerSnapshot> Players = new List<PlayerSnapshot>();
+        public int ProtocolVersion;
+        public int Cols;
+        public int Rows;
+        public int TurnSeconds;
+        public int PollSeconds;   // sondeo de respaldo del cliente
+    }
+
+    // Payload del push. NUNCA lleva el estado: solo avisa de que hay algo nuevo.
+    public class PushPayload
+    {
+        public string type = MessageTypes.MatchUpdated;
+        public string matchId;
     }
 }

@@ -20,6 +20,31 @@ namespace MicrobeOps.Core
         public int Next(int minInclusive, int maxExclusive) => random.Next(minInclusive, maxExclusive);
     }
 
+    // Generador determinista propio (no depende de la versión de .NET ni de UnityEngine.Random):
+    // la misma semilla da siempre la misma colocación, que es lo que permite el replay.
+    public sealed class SeededRandom : IRandom
+    {
+        private ulong state;
+
+        public SeededRandom(int seed) { state = (ulong)(uint)seed * 0x9E3779B97F4A7C15UL + 0x1234567UL; }
+
+        private uint NextUInt()
+        {
+            // splitmix64
+            state += 0x9E3779B97F4A7C15UL;
+            ulong z = state;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            return (uint)((z ^ (z >> 31)) >> 32);
+        }
+
+        public int Next(int minInclusive, int maxExclusive)
+        {
+            uint range = (uint)(maxExclusive - minInclusive);
+            return minInclusive + (int)(NextUInt() % range);
+        }
+    }
+
     // Regla del dado: la misma del juego local (DiceController.OutcomeFromFace),
     // pero aquí la tira quien tiene la autoridad (el servidor), no el cliente.
     //  1-4 -> 1 casilla (40 %) | 5-7 -> 2 casillas (30 %) | 8 -> misil 2x2 (10 %)
