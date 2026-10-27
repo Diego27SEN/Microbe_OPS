@@ -27,6 +27,11 @@ public class DiceController : MonoBehaviour
 
     private bool locked; // true durante el turno de la IA: el jugador no puede tirar
 
+    // Modo online: el dado NO se tira aquí. El botón solo pide la tirada al servidor
+    // (RollRequested) y el resultado llega después con ApplyServerRoll.
+    public bool OnlineMode;
+    public event System.Action RollRequested;
+
     private void Start()
     {
         if (rollButton != null) rollButton.onClick.AddListener(OnRollButtonPressed);
@@ -42,7 +47,23 @@ public class DiceController : MonoBehaviour
     private void OnRollButtonPressed()
     {
         if (locked) return;
+        if (OnlineMode) { RollRequested?.Invoke(); return; }
         RollDice();
+    }
+
+    // Resultado del dado decidido por el servidor.
+    public void ApplyServerRoll(DiceOutcome outcome, int shots)
+    {
+        HasRolled = true;
+        CurrentOutcome = outcome;
+        RemainingShots = shots;
+        UpdateUI();
+    }
+
+    public void SetRemainingShots(int shots)
+    {
+        RemainingShots = shots;
+        UpdateUI();
     }
 
     public const int Faces = 10;

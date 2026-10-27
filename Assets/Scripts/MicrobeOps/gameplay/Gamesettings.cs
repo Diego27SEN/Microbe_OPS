@@ -1,5 +1,5 @@
 // Guarda el modo elegido en el menú para que lo lea la escena de juego.
-public enum GameMode { Local, VsAI }
+public enum GameMode { Local, VsAI, Online }
 
 public static class Gamesettings
 {

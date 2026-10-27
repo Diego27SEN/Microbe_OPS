@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Las reglas viven en Assets/Scripts/MicrobeOps/Core (Unity las compila con su .asmdef).
+       Este proyecto las enlaza SIN copiarlas, para que el módulo de Cloud Code y las pruebas
+       usen exactamente el mismo código que el cliente. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>MicrobeOps.Core</RootNamespace>
+    <AssemblyName>MicrobeOps.Core</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Assets/Scripts/MicrobeOps/Core/**/*.cs" Link="Core/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

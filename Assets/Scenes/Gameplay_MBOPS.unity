@@ -1345,6 +1345,7 @@ GameObject:
   - component: {fileID: 1261902755}
   - component: {fileID: 1261902754}
   - component: {fileID: 1261902756}
+  - component: {fileID: 1261902757}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -1441,6 +1442,38 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!114 &1261902757
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1261902753}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7fd57e81eec84fb49b621fd83ac63afb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OnlineGameManager
+  whiteCells:
+    displayName: "Gl\xF3bulos Blancos"
+    grid: {fileID: 586823036}
+    view: {fileID: 874635608}
+    isAI: 0
+  bacteria:
+    displayName: Bacterias
+    grid: {fileID: 1951219388}
+    view: {fileID: 1498106230}
+    isAI: 0
+  dice: {fileID: 1605675282}
+  cam: {fileID: 609576344}
+  cameraController: {fileID: 609576347}
+  timerText: {fileID: 1504398502}
+  turnText: {fileID: 598579876}
+  messageText: {fileID: 1012518096}
+  selectColor: {r: 1, g: 0.9, b: 0.2, a: 0.65}
+  validColor: {r: 0.2, g: 0.9, b: 0.3, a: 0.65}
+  invalidColor: {r: 0.95, g: 0.2, b: 0.2, a: 0.65}
+  menuSceneName: Menu
 --- !u!1 &1498106228
 GameObject:
   m_ObjectHideFlags: 0
@@ -1665,6 +1698,7 @@ MonoBehaviour:
   rollButton: {fileID: 926273594}
   relocateEnabled: 1
   revealEnabled: 0
+  OnlineMode: 0
 --- !u!4 &1605675283
 Transform:
   m_ObjectHideFlags: 0

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Módulo de Unity Cloud Code (C#). Corre en .NET, NO en Unity.
+       Cloud Code 3.0: los módulos apuntan a .NET 10 y se publican para linux-x64
+       (ver Server/build-module.ps1). El nombre del proyecto principal debe coincidir
+       con el del archivo .ccm. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>MicrobeOpsModule</AssemblyName>
+    <RootNamespace>MicrobeOps.Module</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Com.Unity.Services.CloudCode.Core" Version="0.0.9" />
+    <PackageReference Include="Com.Unity.Services.CloudCode.Apis" Version="0.0.27" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../MicrobeOps.Core/MicrobeOps.Core.csproj" />
+  </ItemGroup>
+
+</Project>

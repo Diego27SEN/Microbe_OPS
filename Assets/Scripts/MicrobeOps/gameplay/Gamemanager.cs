@@ -70,6 +70,7 @@ public class Gamemanager : MonoBehaviour
     {
         if (cam == null) cam = Camera.main;
         if (Gamesettings.HasSelection) mode = Gamesettings.Mode;
+        if (mode == GameMode.Online) { enabled = false; return; } // la partida online la dirige OnlineGameManager
 
         sides = new[] { whiteCells, bacteria };
         whiteCells.isAI = false;
