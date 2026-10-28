@@ -2,7 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-public enum DiceOutcome { None, Single, Double, Missile, Relocate, Reveal }
+public enum DiceOutcome { None, Single, Double, Missile, Relocate }
 
 // Solo el dado. Ponlo en un GameObject de la escena y asigna los campos en el Inspector.
 public class DiceController : MonoBehaviour
@@ -12,7 +12,6 @@ public class DiceController : MonoBehaviour
 
     // Apagado: esa cara cuenta como disparo de 1 casilla.
     [SerializeField] private bool relocateEnabled = true;  // Reubicar un organismo
-    [SerializeField] private bool revealEnabled = false;   // Revelar (rayos X): aún sin implementar
 
     public int RemainingShots { get; private set; }
     public bool HasRolled { get; private set; }
@@ -66,21 +65,19 @@ public class DiceController : MonoBehaviour
         UpdateUI();
     }
 
-    public const int Faces = 10;
+    public const int Faces = 9;
 
     // Regla del dado separada de la interfaz: fácil de cambiar o de validar en servidor.
-    //  1-4  -> 1 casilla   (40 %)
-    //  5-7  -> 2 casillas  (30 %)
-    //  8    -> Misil 2x2   (10 %)
-    //  9    -> Reubicar    (10 %)
-    //  10   -> Revelar     (10 %)
-    public static DiceOutcome OutcomeFromFace(int face, bool relocateEnabled, bool revealEnabled)
+    //  1-4  -> 1 casilla   (44 %)
+    //  5-7  -> 2 casillas  (33 %)
+    //  8    -> Misil 2x2   (11 %)
+    //  9    -> Reubicar    (11 %)
+    public static DiceOutcome OutcomeFromFace(int face, bool relocateEnabled)
     {
         if (face <= 4) return DiceOutcome.Single;
         if (face <= 7) return DiceOutcome.Double;
         if (face == 8) return DiceOutcome.Missile;
-        if (face == 9) return relocateEnabled ? DiceOutcome.Relocate : DiceOutcome.Single;
-        return revealEnabled ? DiceOutcome.Reveal : DiceOutcome.Single;
+        return relocateEnabled ? DiceOutcome.Relocate : DiceOutcome.Single;
     }
 
     public void RollDice()
@@ -89,7 +86,7 @@ public class DiceController : MonoBehaviour
 
         HasRolled = true;
         int face = Random.Range(1, Faces + 1);
-        CurrentOutcome = OutcomeFromFace(face, relocateEnabled, revealEnabled);
+        CurrentOutcome = OutcomeFromFace(face, relocateEnabled);
         Debug.Log($"Dado: {face} -> {CurrentOutcome}");
 
         switch (CurrentOutcome)
@@ -97,7 +94,7 @@ public class DiceController : MonoBehaviour
             case DiceOutcome.Single: RemainingShots = 1; break;
             case DiceOutcome.Double: RemainingShots = 2; break;
             case DiceOutcome.Missile: RemainingShots = 1; break; // 1 disparo, área 2x2
-            default: RemainingShots = 0; break; // Relocate / Reveal: sin disparos
+            default: RemainingShots = 0; break; // Relocate: sin disparos
         }
 
         UpdateUI();
@@ -131,7 +128,6 @@ public class DiceController : MonoBehaviour
         switch (CurrentOutcome)
         {
             case DiceOutcome.Relocate: diceResultValue.text = "Mover"; break;
-            case DiceOutcome.Reveal: diceResultValue.text = "Rayos X"; break;
             case DiceOutcome.Missile: diceResultValue.text = RemainingShots > 0 ? "2x2" : ""; break;
             default: diceResultValue.text = RemainingShots > 0 ? RemainingShots.ToString() : ""; break;
         }

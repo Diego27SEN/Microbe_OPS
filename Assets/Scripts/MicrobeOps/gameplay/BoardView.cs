@@ -6,7 +6,7 @@ using UnityEngine;
 // Capas (Order in Layer): fondo -10, organismo 0, casilla tapada 1, hit/miss 2.
 public class BoardView : MonoBehaviour
 {
-    public GridManager grid;
+    public Gridmanager grid;
     public GameObject hitPrefab;      // marcador de impacto
     public GameObject missPrefab;     // marcador de agua
     public GameObject organismPrefab; // trozo de organismo (una por casilla)
@@ -123,6 +123,15 @@ public class BoardView : MonoBehaviour
             list.Add(go);
         }
         ownObjects[o] = list;
+    }
+
+    // Borra los organismos propios dibujados (para volver a colocarlos al randomizar)
+    public void ClearOwn()
+    {
+        foreach (var list in ownObjects.Values)
+            foreach (var go in list)
+                if (go != null) Destroy(go);
+        ownObjects.Clear();
     }
 
     // ---------- Vista previa (para reubicar) ----------

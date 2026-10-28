@@ -4,18 +4,19 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 [System.Serializable]
 public class PlayerSide
 {
     public string displayName = "Jugador";
-    public GridManager grid;
+    public Gridmanager grid;
     public BoardView view;
     [HideInInspector] public Board board;
     [HideInInspector] public bool isAI;
 }
 
-public enum TurnPhase { Rolling, Shooting, Relocating, Switching, GameOver }
+public enum TurnPhase { Setup, Rolling, Shooting, Relocating, Switching, GameOver }
 
 // Modos: Local (2 jugadores en el mismo dispositivo) y VsAI (tú = Glóbulos Blancos, IA = Bacterias).
 public class Gamemanager : MonoBehaviour
@@ -42,6 +43,10 @@ public class Gamemanager : MonoBehaviour
     public float switchDelay = 1.5f;
     public bool revealSunkOrganisms = false; // false: solo se rompen las casillas disparadas
 
+    [Header("Colocación inicial")]
+    public Button randomizeButton; // "Randomizar": vuelve a colocar tus organismos al azar
+    public Button readyButton;     // "Listo": confirma la posición y sigue
+
     [Header("IA")]
     public float aiThinkDelay = 1.2f; // pausa antes de tirar el dado
     public float aiShotDelay = 0.9f;  // pausa entre disparos
@@ -55,6 +60,7 @@ public class Gamemanager : MonoBehaviour
 
     private PlayerSide[] sides;
     private int currentIndex;
+    private int setupIndex;
     private float timeLeft;
     private readonly EnemyAI ai = new EnemyAI();
     private bool firstCameraMove = true;
@@ -70,7 +76,6 @@ public class Gamemanager : MonoBehaviour
     {
         if (cam == null) cam = Camera.main;
         if (Gamesettings.HasSelection) mode = Gamesettings.Mode;
-        if (mode == GameMode.Online) { enabled = false; return; } // la partida online la dirige OnlineGameManager
 
         sides = new[] { whiteCells, bacteria };
         whiteCells.isAI = false;
@@ -87,17 +92,28 @@ public class Gamemanager : MonoBehaviour
                 s.view.ShowOwn(o);
 
         dice.OnRolled += HandleRolled;
-        StartTurn(0);
+
+        if (randomizeButton != null) randomizeButton.onClick.AddListener(OnRandomizePressed);
+        if (readyButton != null) readyButton.onClick.AddListener(OnReadyPressed);
+
+        SetSetupButtons(false);
+
+        // Sin botón "Listo" no habría forma de salir de la colocación: en ese caso se empieza directo
+        if (readyButton != null) BeginSetup(0);
+        else StartTurn(0);
     }
 
     private void OnDestroy()
     {
         if (dice != null) dice.OnRolled -= HandleRolled;
+        if (randomizeButton != null) randomizeButton.onClick.RemoveListener(OnRandomizePressed);
+        if (readyButton != null) readyButton.onClick.RemoveListener(OnReadyPressed);
     }
 
     private void Update()
     {
-        if (Phase != TurnPhase.Rolling && Phase != TurnPhase.Shooting && Phase != TurnPhase.Relocating) return;
+        if (Phase != TurnPhase.Rolling && Phase != TurnPhase.Shooting
+            && Phase != TurnPhase.Relocating) return;
         if (Current.isAI) return; // la IA juega por corrutinas y no usa el temporizador
 
         timeLeft -= Time.deltaTime;
@@ -116,6 +132,61 @@ public class Gamemanager : MonoBehaviour
             HandleClick();
         else if (Phase == TurnPhase.Relocating)
             HandleRelocateInput();
+    }
+
+    // ---------- Colocación inicial (Randomizar / Listo) ----------
+
+    private void BeginSetup(int index)
+    {
+        setupIndex = index;
+        currentIndex = index;
+        Phase = TurnPhase.Setup;
+
+        dice.ResetDice();
+        dice.SetLocked(true); // no se puede tirar el dado antes de empezar
+
+        ApplyOwnVisibility();
+        ShowBoard(mode == GameMode.VsAI ? whiteCells : sides[index]);
+        SetSetupButtons(true);
+
+        if (turnText != null) turnText.text = $"Colocación: {sides[index].displayName}";
+        if (timerText != null) timerText.text = "";
+        Say("Pulsa Randomizar hasta que te guste la posición y luego Listo.");
+    }
+
+    private void SetSetupButtons(bool visible)
+    {
+        if (randomizeButton != null) randomizeButton.gameObject.SetActive(visible);
+        if (readyButton != null) readyButton.gameObject.SetActive(visible);
+    }
+
+    // Vuelve a colocar al azar los organismos del jugador que está colocando
+    public void OnRandomizePressed()
+    {
+        if (Phase != TurnPhase.Setup) return;
+
+        var side = sides[setupIndex];
+        side.view.ClearOwn();
+        side.board = new Board(side.grid.cols, side.grid.rows);
+        RandomPlacer.PlaceAll(side.board, side == whiteCells ? CreateWhiteCells() : CreateBacteria());
+
+        foreach (var o in side.board.Organisms)
+            side.view.ShowOwn(o);
+    }
+
+    public void OnReadyPressed()
+    {
+        if (Phase != TurnPhase.Setup) return;
+
+        // En local, el segundo jugador también coloca los suyos
+        if (mode == GameMode.Local && setupIndex == 0)
+        {
+            BeginSetup(1);
+            return;
+        }
+
+        SetSetupButtons(false);
+        StartTurn(0);
     }
 
     // ---------- Turnos ----------
@@ -172,7 +243,7 @@ public class Gamemanager : MonoBehaviour
             return;
         }
 
-        if (!dice.CanShoot) // p. ej. Revelar, aún sin implementar
+        if (!dice.CanShoot) // p. ej. si el dado no da disparos
         {
             Say($"Resultado: {outcome}. No hay disparos, se pasa el turno.");
             StartCoroutine(SwitchTurnRoutine());
@@ -211,7 +282,7 @@ public class Gamemanager : MonoBehaviour
     {
         Phase = TurnPhase.Switching;
         selected = null;
-        Current.view.ClearPreview();
+        foreach (var side in sides) side.view.ClearPreview();
         yield return new WaitForSeconds(switchDelay);
         StartTurn(1 - currentIndex);
     }
@@ -406,7 +477,8 @@ public class Gamemanager : MonoBehaviour
         {
             bool visible = mode == GameMode.VsAI
                 ? !s.isAI
-                : (s == Current && (Phase == TurnPhase.Rolling || Phase == TurnPhase.Relocating));
+                : (s == Current && (Phase == TurnPhase.Setup || Phase == TurnPhase.Rolling
+                                   || Phase == TurnPhase.Relocating));
             s.view.SetOwnVisible(visible);
         }
     }

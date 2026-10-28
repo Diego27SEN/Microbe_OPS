@@ -2,7 +2,7 @@ using UnityEngine;
 
 // Convierte entre coordenadas de mundo y de casilla.
 // Ponlo en un GameObject vacío centrado donde está tu tablero (en tu captura, en el origen).
-public class GridManager : MonoBehaviour
+public class Gridmanager : MonoBehaviour
 {
     public int cols = 12;
     public int rows = 6;
