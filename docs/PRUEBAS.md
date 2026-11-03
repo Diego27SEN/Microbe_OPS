@@ -42,7 +42,7 @@ Abran dos instancias: Editor + una *build*, o dos Editores. **En la pantalla "Pa
 | C4 | Un turno completo | Tirar el dado, disparar, ver que el turno pasa | Dado y disparos se reflejan en el otro cliente en pocos segundos | Qué se vio tarde o no se vio |
 | C5 | Misil y reubicar | Jugar hasta que salga cada cara | Misil: 2x2. Reubicar: el rival solo ve el aviso, no la nueva posición, y cuesta el turno | Qué pasó |
 | C6 | Fin de partida | Hundir todos los organismos de uno | Aparece "¡Ganaste!/Perdiste" y se revela el tablero rival | Qué mensaje salió |
-| C7 | Dado | Anoten 30 tiradas de cada jugador | Las caras se reparten ~40 % 1 casilla, ~30 % 2, ~10 % misil, ~10 % reubicar, ~10 % "rayos X" (cuenta 1) | La tabla de tiradas |
+| C7 | Dado | Anoten 30 tiradas de cada jugador | Las caras se reparten ~44 % 1 casilla, ~33 % 2, ~11 % misil, ~11 % reubicar (dado de 9 caras, igual que en local) | La tabla de tiradas |
 
 ## D. Robustez
 
@@ -74,13 +74,28 @@ Escriban un pequeño script de Editor (o usen la consola de pruebas de Cloud Cod
 
 ---
 
+## F. Arreglo del modo online (PR de corrección)
+
+Estas pruebas comprueban el PR que restaura la guarda de `Gamemanager` y alinea el dado a 9 caras.
+
+| # | Qué probar | Pasos | Resultado esperado | Si falla, reporten |
+|---|---|---|---|---|
+| F1 | El modo local no corre en online | Menú ▸ **Online** ▸ entrar a la escena de juego | **No** se ven los botones RANDOM / READY ni el mensaje de randomizar; solo el panel "Partida online" | Captura de la escena y la consola |
+| F2 | Modo Local intacto | Menú ▸ Play ▸ **Local**; colocar con RANDOM, pulsar READY, jugar 3 turnos | Funciona igual que antes del PR | Qué cambió |
+| F3 | Modo vs IA intacto | Menú ▸ Play ▸ **IA**; jugar 3 turnos | La IA juega; el humano son los Glóbulos Blancos | Qué cambió |
+| F4 | Volver del online al local | Entrar a **Online**, volver al menú, entrar a **Local** | El modo local arranca normal (no arrastra el modo Online) | Qué pasó |
+| F5 | Dado de 9 caras | `dotnet test Server/MicrobeOps.Tests` | 77 pruebas correctas, incluidas `The_die_has_nine_faces_like_the_local_game` y `A_forged_face_is_rejected(10)` | Salida del comando |
+| F6 | Archivos de Unity fuera de git | Abrir el proyecto en Unity y mirar `git status` | No aparecen `Assets/CloudCode/` ni `*.slnx` como cambios | Qué archivos aparecen |
+
+---
+
 ## Tareas para seguir desarrollando
 
 Elijan una por persona y abran su propio PR. Cada una tiene una pista para que lleguen por su cuenta.
 
 | # | Tarea | Pista |
 |---|---|---|
-| T1 | **Rayos X.** Hoy la cara 10 cuenta como 1 casilla. Impleméntenla en el Core. | `Dice.FromFace`, `MatchSettings.RevealEnabled`. Decidan qué ve el rival y escriban primero la prueba |
+| T1 | **Un solo dado.** `DiceController.OutcomeFromFace` y `Dice.FromFace` (Core) repiten la misma regla. | Hagan que el modo local use el del Core y borren la copia; la prueba `Dice_maps_faces_like_the_local_game` debe seguir pasando |
 | T2 | **Matchmaker.** Reemplazar el código de sala por una cola de Matchmaker. | `handoffId` ya es el punto de unión; el servidor debería comprobar el ticket antes de aceptar a alguien |
 | T3 | **Remote Config.** Que `GetGameConfig` lea tiempos y reglas de Remote Config. | Los `MatchSettings` ya viajan dentro del registro: ¿qué pasa con partidas en curso si cambian? |
 | T4 | **UI de sala.** Reemplazar el panel IMGUI por uGUI o UI Toolkit. | La lógica ya está separada en `OnlineGameManager`; muevan solo el dibujo |

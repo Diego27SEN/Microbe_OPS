@@ -80,3 +80,8 @@ Server/**/obj/
 Server/out/
 *.ccm
 !Server/**/*.csproj
+
+# Los genera Unity al abrir el proyecto o al usar Cloud Code: no se versionan
+/[Aa]ssets/CloudCode/
+/[Aa]ssets/CloudCode.meta
+*.slnx

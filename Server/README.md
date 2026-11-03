@@ -51,4 +51,4 @@ El nombre del ensamblado (`MicrobeOpsModule`) debe coincidir con el del `.ccm`; 
 * **No se ha probado de extremo a extremo contra servicios reales.** La lógica está probada con almacén y avisos falsos (`IMatchStore`, `IPlayerNotifier`); falta desplegarlo para validar la forma exacta de las respuestas de Cloud Save (`409` en conflicto de *write lock*), el trigger programado y los push.
 * **Creación simultánea**: si los dos jugadores crean a la vez, un registro puede pisar al otro; `CreateMatch` lo detecta (relee y se une) pero no es una operación atómica del almacén.
 * **Emparejamiento solo por código de sala** (el id de la sala hace de `handoffId`); con Matchmaker habría que comprobar además el ticket. `GetGameConfig` aún no lee Remote Config.
-* La pantalla de sala usa IMGUI provisional. La cara "Rayos X" sigue sin implementarse (cuenta como 1 casilla).
+* La pantalla de sala usa IMGUI provisional. El dado tiene 9 caras (sin rayos X ni escudo), igual que el modo local.

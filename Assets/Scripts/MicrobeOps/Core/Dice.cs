@@ -2,7 +2,7 @@ using System;
 
 namespace MicrobeOps.Core
 {
-    public enum DiceResult { Single = 0, Double = 1, Missile = 2, Relocate = 3, Reveal = 4 }
+    public enum DiceResult { Single = 0, Double = 1, Missile = 2, Relocate = 3 }
 
     public interface IRandom
     {
@@ -47,19 +47,19 @@ namespace MicrobeOps.Core
 
     // Regla del dado: la misma del juego local (DiceController.OutcomeFromFace),
     // pero aquí la tira quien tiene la autoridad (el servidor), no el cliente.
-    //  1-4 -> 1 casilla (40 %) | 5-7 -> 2 casillas (30 %) | 8 -> misil 2x2 (10 %)
-    //  9 -> reubicar (10 %)    | 10 -> revelar (10 %, apagado: cuenta como 1 casilla)
+    //  1-4 -> 1 casilla (44 %) | 5-7 -> 2 casillas (33 %) | 8 -> misil 2x2 (11 %)
+    //  9 -> reubicar (11 %)
+    // Dado de 9 caras, sin "rayos X" ni escudo: se quitaron del juego (local y online).
     public static class Dice
     {
-        public const int Faces = 10;
+        public const int Faces = 9;
 
-        public static DiceResult FromFace(int face, bool relocateEnabled, bool revealEnabled)
+        public static DiceResult FromFace(int face, bool relocateEnabled)
         {
             if (face <= 4) return DiceResult.Single;
             if (face <= 7) return DiceResult.Double;
             if (face == 8) return DiceResult.Missile;
-            if (face == 9) return relocateEnabled ? DiceResult.Relocate : DiceResult.Single;
-            return revealEnabled ? DiceResult.Reveal : DiceResult.Single;
+            return relocateEnabled ? DiceResult.Relocate : DiceResult.Single;
         }
 
         public static int ShotsFor(DiceResult result)
@@ -69,7 +69,7 @@ namespace MicrobeOps.Core
                 case DiceResult.Single: return 1;
                 case DiceResult.Double: return 2;
                 case DiceResult.Missile: return 1; // 1 disparo, área 2x2
-                default: return 0;                 // Relocate / Reveal: sin disparos
+                default: return 0;                 // Relocate: sin disparos
             }
         }
     }

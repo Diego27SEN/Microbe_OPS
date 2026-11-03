@@ -11,7 +11,6 @@ namespace MicrobeOps.Core
         public int Rows = 6;
         public int TurnSeconds = 30;
         public bool RelocateEnabled = true;
-        public bool RevealEnabled = false;       // "rayos X" aún sin implementar: cuenta como 1 casilla
         public int MaxConsecutiveTimeouts = 3;   // abandono: tres turnos seguidos sin jugar
     }
 
@@ -175,7 +174,7 @@ namespace MicrobeOps.Core
             if (m.Face < 1 || m.Face > Dice.Faces) return Reject(RejectCodes.InvalidMove, "Cara de dado inválida.");
 
             slot.ConsecutiveTimeouts = 0;
-            dice = Dice.FromFace(m.Face, Settings.RelocateEnabled, Settings.RevealEnabled);
+            dice = Dice.FromFace(m.Face, Settings.RelocateEnabled);
             remainingShots = Dice.ShotsFor(dice.Value);
             Phase = dice == DiceResult.Relocate ? MatchPhase.Relocating
                   : remainingShots > 0 ? MatchPhase.Shooting
@@ -190,7 +189,7 @@ namespace MicrobeOps.Core
                 Shots = remainingShots,
             });
 
-            if (Phase == MatchPhase.Rolling) NextTurn(m.AtMs); // p. ej. "Revelar" sin implementar
+            if (Phase == MatchPhase.Rolling) NextTurn(m.AtMs); // salvaguarda: una tirada sin disparos ni reubicar no bloquea el turno
             return null;
         }
 
