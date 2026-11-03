@@ -56,10 +56,16 @@ namespace MicrobeOps.Tests
         [InlineData(7, DiceResult.Double)]
         [InlineData(8, DiceResult.Missile)]
         [InlineData(9, DiceResult.Relocate)]
-        [InlineData(10, DiceResult.Single)] // "revelar" apagado: cuenta como 1 casilla
         public void Dice_maps_faces_like_the_local_game(int face, DiceResult expected)
         {
-            Assert.Equal(expected, Dice.FromFace(face, true, false));
+            Assert.Equal(expected, Dice.FromFace(face, true));
+        }
+
+        [Fact]
+        public void The_die_has_nine_faces_like_the_local_game()
+        {
+            Assert.Equal(9, Dice.Faces);
+            Assert.Equal(DiceResult.Single, Dice.FromFace(9, relocateEnabled: false));
         }
 
         [Fact]
@@ -77,6 +83,7 @@ namespace MicrobeOps.Tests
 
         [Theory]
         [InlineData(0)]
+        [InlineData(10)]   // el dado tiene 9 caras
         [InlineData(11)]
         [InlineData(-3)]
         public void A_forged_face_is_rejected(int face)

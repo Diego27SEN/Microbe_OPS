@@ -37,7 +37,7 @@ Tipos en `Core/Protocol.cs`, compartidos por cliente y servidor. `GameProtocol.V
 El registro (`MatchRecord`) guarda `PlayerIds`, `Settings`, `StartedAtMs`, `PlacementSeed` y `Moves[]`; **no** guarda el tablero. Cada llamada lo reproduce:
 
 * **Colocación**: sale de `SeededRandom(PlacementSeed)` (generador propio, no depende de la versión de .NET).
-* **Dado**: la jugada `roll` lleva su `Face` (1–10). El azar no entra al motor: por eso el replay es determinista.
+* **Dado**: la jugada `roll` lleva su `Face` (1–9). El azar no entra al motor: por eso el replay es determinista.
 * **Reloj**: cada jugada lleva su `AtMs`. Un `timeout` se registra en el instante *exacto* del plazo (no "ahora"), de modo que el siguiente turno empieza donde terminó el anterior y el resultado no depende de cuándo se consultó.
 
 Guardado en **Cloud Save Custom Data, clase de acceso PRIVATE** (`customId = matchId`, clave `record`; índice en `customId = match-index`). Ver `CloudSaveMatchStore.cs`; hay una prueba que impide usar las llamadas de clase Default.

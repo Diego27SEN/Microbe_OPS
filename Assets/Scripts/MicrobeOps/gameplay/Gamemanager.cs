@@ -72,6 +72,18 @@ public class Gamemanager : MonoBehaviour
     private PlayerSide Current => sides[currentIndex];
     private PlayerSide Opponent => sides[1 - currentIndex];
 
+    // En modo Online la partida la dirige OnlineGameManager (el servidor decide): este script se apaga
+    // ANTES de Start para que no corra a la vez ni deje visibles los botones de colocación local.
+    private void Awake()
+    {
+        if (Gamesettings.HasSelection && Gamesettings.Mode == GameMode.Online)
+        {
+            if (randomizeButton != null) randomizeButton.gameObject.SetActive(false);
+            if (readyButton != null) readyButton.gameObject.SetActive(false);
+            enabled = false;
+        }
+    }
+
     private void Start()
     {
         if (cam == null) cam = Camera.main;

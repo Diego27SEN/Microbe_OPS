@@ -59,7 +59,7 @@ namespace MicrobeOps.Core
         public string PlayerId;
         public string Kind;          // MoveKinds.*
         public long AtMs;            // reloj del servidor (ms Unix); en un 'timeout' es el instante exacto del plazo
-        public int Face;             // roll: 1..10
+        public int Face;             // roll: 1..9
         public int X;                // shoot / relocate
         public int Y;
         public string OrganismId;    // relocate
