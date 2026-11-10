@@ -26,7 +26,7 @@ Gana quien elimina todos los organismos rivales. Cada turno dura 30 s.
 
 ```
 Assets/Scripts/MicrobeOps/
-├── gameplay/   Modo local y contra IA (Gamemanager, Board, BoardView, EnemyAI, …)
+├── gameplay/   Modo local y contra IA (Gamemanager, BoardView, EnemyAI, …) sobre GameBoard/Catalog
 ├── Core/       Reglas puras SIN Unity, compartidas con el servidor (MatchEngine, GameBoard, Protocolo)
 └── Online/     Cliente online (OnlineSession: red; OnlineGameManager: partida)
 Assets/Editor/  OnlineSetup: configura las escenas para el modo online
@@ -43,4 +43,3 @@ dotnet test Server/MicrobeOps.Tests
 
 * Desplegar y probar el módulo contra servicios reales (ver *Estado y límites conocidos* en `Server/README.md`).
 * Implementar la escena `HowToPlay`.
-* Mover también el modo Vs IA al mismo motor de reglas (`Core`) y retirar `Board`/`Organism` duplicados.

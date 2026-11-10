@@ -58,6 +58,14 @@ namespace MicrobeOps.Core
 
         public bool WasShot(Cell c) => InBounds(c) && (tiles[c.X, c.Y] == Tile.Miss || tiles[c.X, c.Y] == Tile.Hit);
 
+        // Organismo que ocupa una casilla (también vale para casillas ya impactadas, que conservan dueño).
+        public PlacedOrganism OrganismAt(Cell c)
+        {
+            if (!InBounds(c)) return null;
+            var id = owner[c.X, c.Y];
+            return id == null ? null : Find(id);
+        }
+
         // ---------- Colocación ----------
 
         public bool CanPlace(OrganismDef def, Cell origin, int rotation)

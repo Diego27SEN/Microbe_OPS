@@ -45,8 +45,8 @@ namespace MicrobeOps.Core
         }
     }
 
-    // Regla del dado: la misma del juego local (DiceController.OutcomeFromFace),
-    // pero aquí la tira quien tiene la autoridad (el servidor), no el cliente.
+    // Regla ÚNICA del dado: la usan el juego local y el servidor. DiceController solo
+    // adapta el resultado a su enum de UI; aquí la tira quien tiene la autoridad, no el cliente.
     //  1-4 -> 1 casilla (44 %) | 5-7 -> 2 casillas (33 %) | 8 -> misil 2x2 (11 %)
     //  9 -> reubicar (11 %)
     // Dado de 9 caras, sin "rayos X" ni escudo: se quitaron del juego (local y online).

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using MicrobeOps.Core;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -12,16 +13,17 @@ public class PlayerSide
     public string displayName = "Jugador";
     public Gridmanager grid;
     public BoardView view;
-    [HideInInspector] public Board board;
+    [HideInInspector] public GameBoard board;
     [HideInInspector] public bool isAI;
 }
 
 public enum TurnPhase { Setup, Rolling, Shooting, Relocating, Switching, GameOver }
 
 // Modos: Local (2 jugadores en el mismo dispositivo) y VsAI (tú = Glóbulos Blancos, IA = Bacterias).
+// T5: la partida local usa el MISMO GameBoard/Catalog del Core que el servidor online.
 public class Gamemanager : MonoBehaviour
 {
-    [Header("Modo (el menú lo puede cambiar con GameSettings.Select)")]
+    [Header("Modo (el menú lo puede cambiar con Gamesettings.Select)")]
     public GameMode mode = GameMode.Local;
 
     [Header("Bandos")]
@@ -66,7 +68,7 @@ public class Gamemanager : MonoBehaviour
     private bool firstCameraMove = true;
 
     // Reubicar
-    private Organism selected;
+    private PlacedOrganism selected;
     private int relocRotation;
 
     private PlayerSide Current => sides[currentIndex];
@@ -94,10 +96,10 @@ public class Gamemanager : MonoBehaviour
         bacteria.isAI = mode == GameMode.VsAI;
 
         foreach (var s in sides)
-            s.board = new Board(s.grid.cols, s.grid.rows);
+            s.board = new GameBoard(s.grid.cols, s.grid.rows);
 
-        RandomPlacer.PlaceAll(whiteCells.board, CreateWhiteCells());
-        RandomPlacer.PlaceAll(bacteria.board, CreateBacteria());
+        RandomPlacer.PlaceAll(whiteCells.board, Catalog.WhiteCells);
+        RandomPlacer.PlaceAll(bacteria.board, Catalog.Bacteria);
 
         foreach (var s in sides)
             foreach (var o in s.board.Organisms)
@@ -179,8 +181,8 @@ public class Gamemanager : MonoBehaviour
 
         var side = sides[setupIndex];
         side.view.ClearOwn();
-        side.board = new Board(side.grid.cols, side.grid.rows);
-        RandomPlacer.PlaceAll(side.board, side == whiteCells ? CreateWhiteCells() : CreateBacteria());
+        side.board = new GameBoard(side.grid.cols, side.grid.rows);
+        RandomPlacer.PlaceAll(side.board, side == whiteCells ? Catalog.WhiteCells : Catalog.Bacteria);
 
         foreach (var o in side.board.Organisms)
             side.view.ShowOwn(o);
@@ -310,7 +312,8 @@ public class Gamemanager : MonoBehaviour
 
         var target = Opponent;
         Vector2 mousePos = Mouse.current.position.ReadValue();
-        var cell = target.grid.WorldToCell(cam.ScreenToWorldPoint(mousePos));
+        var tile = target.grid.WorldToCell(cam.ScreenToWorldPoint(mousePos));
+        var cell = new Cell(tile.x, tile.y);
         if (!target.board.InBounds(cell)) return;
 
         if (!Fire(target, cell)) return; // casilla ya disparada: no gasta el tiro
@@ -323,23 +326,23 @@ public class Gamemanager : MonoBehaviour
 
     // Dispara (1 casilla o área 2x2 según el dado). Devuelve false si no se pudo disparar.
     // Notifica a la IA de cada resultado (solo le sirve cuando ella es quien dispara).
-    private bool Fire(PlayerSide target, Vector2Int cell)
+    private bool Fire(PlayerSide target, Cell cell)
     {
         if (dice.IsAreaShot)
         {
             var results = target.board.ShootArea2x2(cell);
-            foreach (var kv in results)
+            foreach (var r in results)
             {
-                ApplyShot(target, kv.Key, kv.Value);
-                if (Current.isAI) ai.OnResult(kv.Key, kv.Value);
+                ApplyShot(target, r);
+                if (Current.isAI) ai.OnResult(r.Cell, r.Kind);
             }
             return results.Count > 0;
         }
 
-        var r = target.board.Shoot(cell);
-        if (r == ShotResult.Invalid) return false;
-        ApplyShot(target, cell, r);
-        if (Current.isAI) ai.OnResult(cell, r);
+        var shot = target.board.Shoot(cell);
+        if (shot.Kind == ShotKind.Invalid) return false;
+        ApplyShot(target, shot);
+        if (Current.isAI) ai.OnResult(shot.Cell, shot.Kind);
         return true;
     }
 
@@ -353,7 +356,8 @@ public class Gamemanager : MonoBehaviour
 
         var side = Current;
         Vector2 mousePos = mouse.position.ReadValue();
-        var cell = side.grid.WorldToCell(cam.ScreenToWorldPoint(mousePos));
+        var tile = side.grid.WorldToCell(cam.ScreenToWorldPoint(mousePos));
+        var cell = new Cell(tile.x, tile.y);
         bool click = mouse.leftButton.wasPressedThisFrame && !PointerOverUI();
 
         // Paso 2: ya hay un organismo elegido -> elegir destino
@@ -370,8 +374,8 @@ public class Gamemanager : MonoBehaviour
                 return;
             }
 
-            bool valid = side.board.CanMove(selected, cell, relocRotation);
-            side.view.SetPreview(selected.CellsAt(cell, relocRotation), valid ? validColor : invalidColor);
+            bool valid = side.board.CanMove(selected.Def.Id, cell, relocRotation);
+            side.view.SetPreview(ToVector2(selected.Def.CellsAt(cell, relocRotation)), valid ? validColor : invalidColor);
 
             if (!click) return;
 
@@ -381,10 +385,10 @@ public class Gamemanager : MonoBehaviour
                 return;
             }
 
-            side.board.Move(selected, cell, relocRotation);
+            side.board.Move(selected.Def.Id, cell, relocRotation);
             side.view.ClearPreview();
             side.view.ShowOwn(selected);
-            Say($"{selected.Name} reubicado. Termina tu turno.");
+            Say($"{selected.Def.Name} reubicado. Termina tu turno.");
             selected = null;
             StartCoroutine(SwitchTurnRoutine());
             return;
@@ -393,7 +397,7 @@ public class Gamemanager : MonoBehaviour
         // Paso 1: elegir el organismo
         if (!click || !side.board.InBounds(cell)) return;
 
-        var o = side.board.GetOrganismAt(cell);
+        var o = side.board.OrganismAt(cell);
         if (o == null || o.IsSunk)
         {
             Say("Elige una casilla de uno de tus organismos.");
@@ -402,8 +406,15 @@ public class Gamemanager : MonoBehaviour
 
         selected = o;
         relocRotation = o.Rotation;
-        side.view.SetPreview(o.Cells(), selectColor);
-        Say($"{o.Name} elegido. Clic en el destino (R rota, clic derecho o Esc cancela).");
+        side.view.SetPreview(ToVector2(o.Cells()), selectColor);
+        Say($"{o.Def.Name} elegido. Clic en el destino (R rota, clic derecho o Esc cancela).");
+    }
+
+    private static List<Vector2Int> ToVector2(IEnumerable<Cell> cells)
+    {
+        var result = new List<Vector2Int>();
+        foreach (var c in cells) result.Add(new Vector2Int(c.X, c.Y));
+        return result;
     }
 
     // ---------- Turno de la IA ----------
@@ -439,8 +450,8 @@ public class Gamemanager : MonoBehaviour
         yield return new WaitForSeconds(aiShotDelay);
 
         var board = Current.board;
-        var alive = new List<Organism>();
-        Organism pick = null;
+        var alive = new List<PlacedOrganism>();
+        PlacedOrganism pick = null;
 
         foreach (var o in board.Organisms)
         {
@@ -454,9 +465,9 @@ public class Gamemanager : MonoBehaviour
         {
             for (int i = 0; i < 200; i++)
             {
-                var origin = new Vector2Int(Random.Range(0, board.Cols), Random.Range(0, board.Rows));
+                var origin = new Cell(Random.Range(0, board.Cols), Random.Range(0, board.Rows));
                 int rot = Random.Range(0, 4);
-                if (!board.Move(pick, origin, rot)) continue;
+                if (!board.Move(pick.Def.Id, origin, rot)) continue;
 
                 Current.view.ShowOwn(pick);
                 Say($"{Current.displayName} reubicó un organismo.");
@@ -469,14 +480,15 @@ public class Gamemanager : MonoBehaviour
 
     // ---------- Utilidades ----------
 
-    private void ApplyShot(PlayerSide target, Vector2Int c, ShotResult r)
+    private void ApplyShot(PlayerSide target, ShotCellResult r)
     {
-        target.view.ShowShot(c, r);
-        if (r == ShotResult.Sunk)
+        target.view.ShowShot(new Vector2Int(r.Cell.X, r.Cell.Y), r.Kind);
+        if (r.Kind == ShotKind.Sunk)
         {
-            var o = target.board.GetOrganismAt(c);
+            var o = target.board.Find(r.SunkOrganismId);
+            if (o == null) return;
             if (revealSunkOrganisms) target.view.ShowOrganism(o);
-            Say($"¡{o.Name} eliminado!");
+            Say($"¡{r.SunkOrganismName} eliminado!");
         }
     }
 
@@ -528,10 +540,4 @@ public class Gamemanager : MonoBehaviour
         Debug.Log(msg);
         if (messageText != null) messageText.text = msg;
     }
-
-    private List<Organism> CreateWhiteCells() => new List<Organism>
-        { Organism.Neutrofilo(), Organism.Macrofago(), Organism.Linfocito(), Organism.Eosinofilo(), Organism.Basofilo() };
-
-    private List<Organism> CreateBacteria() => new List<Organism>
-        { Organism.EColi(), Organism.Staphylococcus(), Organism.Salmonella(), Organism.Streptococcus(), Organism.Mycoplasma() };
 }

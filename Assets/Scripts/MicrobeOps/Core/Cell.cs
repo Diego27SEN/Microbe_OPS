@@ -22,5 +22,7 @@ namespace MicrobeOps.Core
         public override string ToString() => "(" + X + "," + Y + ")";
 
         public static Cell operator +(Cell a, Cell b) => new Cell(a.X + b.X, a.Y + b.Y);
+        public static bool operator ==(Cell a, Cell b) => a.Equals(b);
+        public static bool operator !=(Cell a, Cell b) => !a.Equals(b);
     }
 }

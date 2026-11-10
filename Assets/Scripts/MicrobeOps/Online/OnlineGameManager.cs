@@ -60,7 +60,7 @@ public class OnlineGameManager : MonoBehaviour
 
     private PlayerSide mine, opp;
     private GameBoard myLogic;         // solo MI tablero (el del rival nunca llega al cliente)
-    private readonly Dictionary<string, Organism> myOrganisms = new Dictionary<string, Organism>();
+    private readonly Dictionary<string, PlacedOrganism> myOrganisms = new Dictionary<string, PlacedOrganism>();
     private readonly HashSet<Vector2Int> shownOnMine = new HashSet<Vector2Int>();
     private readonly HashSet<Vector2Int> shownOnOpp = new HashSet<Vector2Int>();
     private bool sidesAssigned;
@@ -231,12 +231,12 @@ public class OnlineGameManager : MonoBehaviour
         foreach (var shot in s.YourBoard.Shots)
         {
             var cell = new Vector2Int(shot.X, shot.Y);
-            if (shownOnMine.Add(cell)) mine.view.ShowShot(cell, shot.Hit ? ShotResult.Hit : ShotResult.Miss);
+            if (shownOnMine.Add(cell)) mine.view.ShowShot(cell, shot.Hit ? ShotKind.Hit : ShotKind.Miss);
         }
         foreach (var shot in s.OpponentShots)
         {
             var cell = new Vector2Int(shot.X, shot.Y);
-            if (shownOnOpp.Add(cell)) opp.view.ShowShot(cell, shot.Hit ? ShotResult.Hit : ShotResult.Miss);
+            if (shownOnOpp.Add(cell)) opp.view.ShowShot(cell, shot.Hit ? ShotKind.Hit : ShotKind.Miss);
         }
     }
 
@@ -305,13 +305,14 @@ public class OnlineGameManager : MonoBehaviour
         if (timerText != null) timerText.text = "";
     }
 
-    private static Organism MakeOrganism(PlacementDto p)
-    {
-        var def = Catalog.Find(p.OrganismId);
-        var shape = new Vector2Int[def.Shape.Length];
-        for (int i = 0; i < shape.Length; i++) shape[i] = new Vector2Int(def.Shape[i].X, def.Shape[i].Y);
-        return new Organism(def.Name, shape) { Origin = new Vector2Int(p.X, p.Y), Rotation = p.Rotation };
-    }
+    private static PlacedOrganism MakeOrganism(PlacementDto p) =>
+        new PlacedOrganism
+        {
+            Def = Catalog.Find(p.OrganismId),
+            Origin = new Cell(p.X, p.Y),
+            Rotation = p.Rotation,
+            Hits = p.Hits,
+        };
 
     // ---------- Cámara y textos ----------
 

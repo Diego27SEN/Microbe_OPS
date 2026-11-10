@@ -1,3 +1,4 @@
+using MicrobeOps.Core;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -65,19 +66,22 @@ public class DiceController : MonoBehaviour
         UpdateUI();
     }
 
-    public const int Faces = 9;
+    public const int Faces = Dice.Faces;
 
-    // Regla del dado separada de la interfaz: fácil de cambiar o de validar en servidor.
-    //  1-4  -> 1 casilla   (44 %)
-    //  5-7  -> 2 casillas  (33 %)
-    //  8    -> Misil 2x2   (11 %)
-    //  9    -> Reubicar    (11 %)
-    public static DiceOutcome OutcomeFromFace(int face, bool relocateEnabled)
+    // T1: la regla vive una sola vez en Core.Dice. Aquí solo se adapta al enum de la vista.
+    public static DiceOutcome OutcomeFromFace(int face, bool relocateEnabled) =>
+        ToOutcome(Dice.FromFace(face, relocateEnabled));
+
+    private static DiceOutcome ToOutcome(DiceResult result)
     {
-        if (face <= 4) return DiceOutcome.Single;
-        if (face <= 7) return DiceOutcome.Double;
-        if (face == 8) return DiceOutcome.Missile;
-        return relocateEnabled ? DiceOutcome.Relocate : DiceOutcome.Single;
+        switch (result)
+        {
+            case DiceResult.Single: return DiceOutcome.Single;
+            case DiceResult.Double: return DiceOutcome.Double;
+            case DiceResult.Missile: return DiceOutcome.Missile;
+            case DiceResult.Relocate: return DiceOutcome.Relocate;
+            default: return DiceOutcome.None;
+        }
     }
 
     public void RollDice()
@@ -86,16 +90,10 @@ public class DiceController : MonoBehaviour
 
         HasRolled = true;
         int face = Random.Range(1, Faces + 1);
-        CurrentOutcome = OutcomeFromFace(face, relocateEnabled);
+        var result = Dice.FromFace(face, relocateEnabled);
+        CurrentOutcome = ToOutcome(result);
+        RemainingShots = Dice.ShotsFor(result);
         Debug.Log($"Dado: {face} -> {CurrentOutcome}");
-
-        switch (CurrentOutcome)
-        {
-            case DiceOutcome.Single: RemainingShots = 1; break;
-            case DiceOutcome.Double: RemainingShots = 2; break;
-            case DiceOutcome.Missile: RemainingShots = 1; break; // 1 disparo, área 2x2
-            default: RemainingShots = 0; break; // Relocate: sin disparos
-        }
 
         UpdateUI();
         OnRolled?.Invoke(CurrentOutcome);

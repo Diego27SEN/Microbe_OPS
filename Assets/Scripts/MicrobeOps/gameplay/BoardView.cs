@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using MicrobeOps.Core;
 using UnityEngine;
 
 // Solo dibuja. Un BoardView por tablero.
@@ -21,8 +22,9 @@ public class BoardView : MonoBehaviour
 
     private readonly Dictionary<Vector2Int, GameObject> covers = new Dictionary<Vector2Int, GameObject>();
     private readonly HashSet<Vector2Int> pieces = new HashSet<Vector2Int>();
-    private readonly HashSet<Organism> revealed = new HashSet<Organism>();
-    private readonly Dictionary<Organism, List<GameObject>> ownObjects = new Dictionary<Organism, List<GameObject>>();
+    private readonly HashSet<string> revealed = new HashSet<string>();
+    // T5: el Core identifica cada organismo por su Def.Id; así redibujar uno no deja piezas viejas.
+    private readonly Dictionary<string, List<GameObject>> ownObjects = new Dictionary<string, List<GameObject>>();
     private readonly List<GameObject> previewObjects = new List<GameObject>();
     private bool coversBuilt;
     private bool ownVisible;
@@ -81,21 +83,23 @@ public class BoardView : MonoBehaviour
 
     // ---------- Disparos ----------
 
-    public void ShowShot(Vector2Int c, ShotResult r)
+    public void ShowShot(Vector2Int c, ShotKind r)
     {
         RevealCell(c);
-        if (r != ShotResult.Miss) ShowPiece(c); // impacto: aparece el trozo del organismo
-        Spawn(r == ShotResult.Miss ? missPrefab : hitPrefab, c);
+        // En el tablero propio las piezas ya están dibujadas; en el rival el impacto las revela.
+        if (r != ShotKind.Miss && !ownVisible) ShowPiece(c);
+        Spawn(r == ShotKind.Miss ? missPrefab : hitPrefab, c);
     }
 
     // Revela un organismo completo (cuando lo hunden)
-    public void ShowOrganism(Organism o)
+    public void ShowOrganism(PlacedOrganism o)
     {
-        if (!revealed.Add(o)) return;
+        if (o?.Def == null || !revealed.Add(o.Def.Id)) return;
         foreach (var c in o.Cells())
         {
-            RevealCell(c);
-            ShowPiece(c);
+            var cell = new Vector2Int(c.X, c.Y);
+            RevealCell(cell);
+            ShowPiece(cell);
         }
     }
 
@@ -108,21 +112,24 @@ public class BoardView : MonoBehaviour
 
     // Dibuja los organismos PROPIOS (se pueden ocultar con SetOwnVisible)
     // También sirve para redibujar un organismo después de moverlo.
-    public void ShowOwn(Organism o)
+    public void ShowOwn(PlacedOrganism o)
     {
-        if (ownObjects.TryGetValue(o, out var old))
+        if (o?.Def == null) return;
+        string id = o.Def.Id;
+
+        if (ownObjects.TryGetValue(id, out var old))
             foreach (var go in old)
                 if (go != null) Destroy(go);
 
         var list = new List<GameObject>();
         foreach (var c in o.Cells())
         {
-            var go = Spawn(organismPrefab, c);
+            var go = Spawn(organismPrefab, new Vector2Int(c.X, c.Y));
             if (go == null) continue;
             go.SetActive(ownVisible);
             list.Add(go);
         }
-        ownObjects[o] = list;
+        ownObjects[id] = list;
     }
 
     // Borra los organismos propios dibujados (para volver a colocarlos al randomizar)
