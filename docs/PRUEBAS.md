@@ -1,6 +1,6 @@
 # Pruebas y tareas del modo online
 
-Este documento es para ustedes (los alumnos). El PR trae el modo online de Microbe_OPS, pero **solo se probó con pruebas automáticas y compilando en Unity: nunca se ejecutó contra Unity Gaming Services (UGS) real.** Su trabajo es probarlo, reportar qué pasó y seguir desarrollando.
+Este documento es para ustedes (los alumnos). El PR trae el modo online de Microbe_OPS, pero **solo se probó con pruebas automáticas y compilando en Unity: nunca se ejecutó una partida de extremo a extremo contra Unity Gaming Services (UGS) real** (el módulo ya está desplegado en el proyecto del curso). Su trabajo es probarlo, reportar qué pasó y seguir desarrollando.
 
 Para entender el diseño antes de probar, lean en este orden: `Server/PROTOCOLO.md` → `Assets/Scripts/MicrobeOps/Core/MatchEngine.cs` → `Server/MicrobeOps.Module/MatchService.cs` → `Assets/Scripts/MicrobeOps/Online/OnlineGameManager.cs`.
 
@@ -14,7 +14,7 @@ Por cada prueba, abran un *issue* o comenten en el PR con: **número de prueba, 
 
 | # | Qué probar | Pasos | Resultado esperado | Si falla, reporten |
 |---|---|---|---|---|
-| A1 | Pruebas automáticas | Instalar .NET SDK 10. `dotnet test Server/MicrobeOps.Tests` | 76 pruebas correctas | Salida completa del comando |
+| A1 | Pruebas automáticas | Instalar .NET SDK 10. `dotnet test Server/MicrobeOps.Tests` | 77 pruebas correctas | Salida completa del comando |
 | A2 | Unity compila | Abrir el proyecto con Unity 6000.3.23f1 (la primera vez descarga paquetes) | Sin errores rojos en la consola | Los mensajes de error |
 | A3 | El modo contra IA sigue igual | Abrir `Menu`, pulsar **Play**, jugar 3 turnos | Funciona como antes (dado, disparos, IA, reubicar) | Qué cambió respecto a `main` |
 | A4 | Botones del menú | Pulsar **Quit** (en el Editor, parar el Play) y **Online** | Quit sale; Online abre la escena de juego con el panel "Partida online" | Captura del menú: ¿el botón Online queda bien ubicado? |
@@ -22,13 +22,15 @@ Por cada prueba, abran un *issue* o comenten en el PR con: **número de prueba, 
 
 ## B. Despliegue en UGS
 
-Pasos en `Server/README.md` (sección *Puesta en marcha*). **No guarden credenciales en el repo.**
+Pasos en `Server/README.md` (sección *Despliegue en Unity Gaming Services*). **No guarden credenciales en el repo.** El despliegue automático vive en `.github/workflows/deploy-ugs.yml` (secretos del repositorio).
 
 | # | Qué probar | Resultado esperado | Si falla, reporten |
 |---|---|---|---|
-| B1 | `./Server/build-module.ps1` | Se crea `Server/out/MicrobeOpsModule.ccm` | Error de compilación o de publicación |
+| B1 | `./Server/deploy-ugs.ps1 -DryRun` | Pasan las 77 pruebas, se genera `Server/out/MicrobeOpsModule.ccm` y la simulación no cambia nada en UGS | Error de compilación, de publicación o de credenciales |
 | B2 | Vincular el proyecto a UGS y activar Authentication, Multiplayer Services, Cloud Code y Cloud Save | El Dashboard muestra los 4 servicios activos | Qué paso no pudieron hacer |
-| B3 | `ugs deploy Server/out/MicrobeOpsModule.ccm Server/Deploy` | Aparecen en Cloud Code las funciones `CreateMatch`, `PlayMove`, `GetMatchState`, `GetGameConfig`, `SweepAbandonedMatches`, y el trigger | El mensaje de error de `ugs` |
+| B3 | `./Server/deploy-ugs.ps1` | El Dashboard muestra el módulo con `CreateMatch`, `PlayMove`, `GetMatchState`, `GetGameConfig` y `SweepAbandonedMatches` | El mensaje de error de `ugs` |
+| B4 | Trigger y scheduler | `ugs triggers list` y `ugs scheduler list` muestran el barrido cada 5 min. Si la Service Account no tiene los roles *Triggers Configuration Editor* y *Scheduler Configuration Editor*, `ugs` responde `403 Not authorized` y el script lo explica | El mensaje de error completo |
+| B5 | Workflow de CI | En GitHub ▸ Actions ▸ **Deploy UGS** el trabajo del módulo queda en verde | El paso que falló y su log |
 
 ## C. Partida entre dos clientes (flujo normal)
 
@@ -101,6 +103,6 @@ Elijan una por persona y abran su propio PR. Cada una tiene una pista para que l
 | T4 | **UI de sala.** Reemplazar el panel IMGUI por uGUI o UI Toolkit. | La lógica ya está separada en `OnlineGameManager`; muevan solo el dibujo |
 | T5 | **Unificar el modo contra IA.** `Board`/`Organism` están duplicados con `GameBoard` del Core. | Que `Gamemanager` use `GameBoard` y borren lo duplicado, con pruebas antes y después |
 | T6 | **Creación atómica.** Hoy dos creadores simultáneos pueden pisarse y se corrige releyendo. | Busquen una forma de "crear solo si no existe" en Cloud Save y expliquen por qué es mejor |
-| T7 | **CI.** Un workflow de GitHub Actions que ejecute `dotnet test`. | Sin secretos en el repo |
+| T7 | **CI de pruebas.** Agregar un workflow que ejecute `dotnet test` en cada PR, sin secretos. | El de despliegue ya existe (`.github/workflows/deploy-ugs.yml`), pero necesita credenciales; uno de solo pruebas puede correr en cualquier PR |
 | T8 | **Más pruebas.** Cubran reubicar un organismo ya dañado (se cura) y misil en esquinas. | `GameBoardTests` nuevo en `Server/MicrobeOps.Tests` |
 | T9 | **Explicación.** Escriban en 10 líneas por qué el rival no puede ver el tablero ni predecir el dado. | Usen los nombres reales de clases y campos |

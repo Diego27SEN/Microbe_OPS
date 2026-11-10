@@ -1,0 +1,115 @@
+name: Deploy UGS
+
+# Despliega MicrobeOpsModule (Cloud Code) y, opcionalmente, el trigger y el
+# scheduler del barrido. Las credenciales viven en los secretos del repositorio:
+#   UGS_CLI_SERVICE_KEY_ID, UGS_CLI_SERVICE_SECRET_KEY,
+#   UGS_CLI_PROJECT_ID, UGS_CLI_ENVIRONMENT_NAME
+#
+# El despliegue del módulo es obligatorio para que el modo online funcione.
+# El trigger/scheduler necesita roles extra en la Service Account: si faltan,
+# ese trabajo queda en rojo pero no bloquea el despliegue del módulo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Server/**'
+      - '.github/workflows/deploy-ugs.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Simular el despliegue (no cambia nada en UGS)'
+        type: boolean
+        default: false
+      deploy_config:
+        description: 'Desplegar también trigger y scheduler'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ugs-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  UGS_CLI_SERVICE_KEY_ID: ${{ secrets.UGS_CLI_SERVICE_KEY_ID }}
+  UGS_CLI_SERVICE_SECRET_KEY: ${{ secrets.UGS_CLI_SERVICE_SECRET_KEY }}
+  UGS_CLI_PROJECT_ID: ${{ secrets.UGS_CLI_PROJECT_ID }}
+  UGS_CLI_ENVIRONMENT_NAME: ${{ secrets.UGS_CLI_ENVIRONMENT_NAME || 'production' }}
+
+jobs:
+  module:
+    name: Módulo Cloud Code
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Comprobar secretos
+        run: |
+          missing=0
+          for name in UGS_CLI_SERVICE_KEY_ID UGS_CLI_SERVICE_SECRET_KEY UGS_CLI_PROJECT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Falta el secreto $name en el repositorio."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Instalar la CLI de UGS
+        run: npm install -g ugs && ugs --version
+
+      - name: Pruebas, empaquetado y despliegue del módulo
+        env:
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(-SkipConfig)
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            args+=(-DryRun)
+          fi
+          pwsh -NoProfile -File ./Server/deploy-ugs.ps1 "${args[@]}"
+
+  config:
+    name: Trigger y scheduler
+    needs: module
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_config }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar la CLI de UGS
+        run: npm install -g ugs && ugs --version
+
+      - name: Desplegar trigger y scheduler
+        env:
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(-ConfigOnly -SkipBuild -SkipTests)
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            args+=(-DryRun)
+          fi
+          pwsh -NoProfile -File ./Server/deploy-ugs.ps1 "${args[@]}"
+          ugs triggers list -p "$UGS_CLI_PROJECT_ID" -e "$UGS_CLI_ENVIRONMENT_NAME"
+          ugs scheduler list -p "$UGS_CLI_PROJECT_ID" -e "$UGS_CLI_ENVIRONMENT_NAME"
+
+      - name: Aviso si faltan permisos
+        if: failure()
+        run: |
+          {
+            echo "### Trigger y scheduler sin desplegar"
+            echo ""
+            echo "El módulo de Cloud Code sí se desplegó. Para completar el barrido,"
+            echo "asigna a la Service Account los roles **Triggers Configuration Editor** y"
+            echo "**Scheduler Configuration Editor** (LiveOps) y **Unity Environments Admin**"
+            echo "en el Dashboard de Unity, y vuelve a ejecutar este workflow."
+          } >> "$GITHUB_STEP_SUMMARY"

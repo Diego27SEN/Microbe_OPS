@@ -4,9 +4,10 @@
 Server/
 ├── MicrobeOps.Core/      Reglas (enlaza los fuentes de Assets/Scripts/MicrobeOps/Core: mismo código que el cliente)
 ├── MicrobeOps.Module/    Módulo de Cloud Code: CreateMatch / PlayMove / GetMatchState / SweepAbandonedMatches
-├── MicrobeOps.Tests/     76 pruebas (xUnit): reglas, replay, trampas, vistas, servicio, concurrencia
+├── MicrobeOps.Tests/     77 pruebas (xUnit): reglas, replay, trampas, vistas, servicio, concurrencia
 ├── Deploy/               Trigger programado del barrido (.tr y .sched)
 ├── build-module.ps1      Empaqueta MicrobeOpsModule.ccm
+├── deploy-ugs.ps1        Pruebas, empaquetado, despliegue y verificación en UGS
 └── PROTOCOLO.md          Endpoints, validaciones, push y secuencia de un turno
 ```
 
@@ -26,19 +27,64 @@ dotnet test Server/MicrobeOps.Tests
 
 El nombre del ensamblado (`MicrobeOpsModule`) debe coincidir con el del `.ccm`; es también el nombre de módulo que usa el cliente (`OnlineSession.ModuleName`).
 
-## Puesta en marcha en Unity Gaming Services (pendiente: requiere su proyecto UGS)
+## Despliegue en Unity Gaming Services
+
+Requisitos: [.NET SDK 10](https://dotnet.microsoft.com/download), Node.js y la CLI de UGS (`npm install -g ugs`).
 
 1. En el [Dashboard de Unity](https://cloud.unity.com) crear/elegir un proyecto y un entorno; vincularlo en Unity (*Edit ▸ Project Settings ▸ Services*).
 2. Activar **Authentication** (inicio de sesión anónimo), **Multiplayer Services** (sesiones, solo para emparejar con código), **Cloud Code** y **Cloud Save**.
-3. Crear una **Service Account** con los roles de Cloud Code y de entornos, y configurar la CLI (`ugs`) con sus credenciales **sin guardarlas en el repo** (variables de entorno o secretos del pipeline).
-4. Desplegar:
+3. Crear una **Service Account** y darle estos roles del proyecto:
+   * Cloud Code (editor/publicador) y **Unity Environments Admin** — necesarios para el módulo.
+   * En **LiveOps**: **Triggers Configuration Editor** y **Scheduler Configuration Editor** — solo si vas a desplegar el barrido programado.
+4. Autenticar la CLI **sin guardar credenciales en el repo**:
 
    ```bash
+   ugs login                                  # guarda la sesión en tu equipo
+   # o, para CI:
+   UGS_CLI_SERVICE_KEY_ID=... UGS_CLI_SERVICE_SECRET_KEY=... ugs login --service-key-id "$UGS_CLI_SERVICE_KEY_ID" --secret-key-stdin
    ugs config set project-id <id-del-proyecto>
    ugs config set environment-name <entorno>
+   ```
+
+5. Desplegar con el script (pruebas → empaquetado → módulo → trigger/scheduler → verificación):
+
+   ```powershell
+   ./Server/deploy-ugs.ps1                 # todo; lee el proyecto/entorno de `ugs config` o de UGS_CLI_*
+   ./Server/deploy-ugs.ps1 -DryRun         # simula, no cambia nada
+   ./Server/deploy-ugs.ps1 -SkipConfig     # solo el módulo (sin trigger ni scheduler)
+   ./Server/deploy-ugs.ps1 -ConfigOnly -SkipBuild -SkipTests
+   ```
+
+   También se puede desplegar a mano:
+
+   ```bash
+   ./Server/build-module.ps1
    ugs deploy Server/out/MicrobeOpsModule.ccm Server/Deploy
    ```
-5. En Unity: menú **Microbe Ops ▸ Configurar modo online en las escenas** (ya aplicado en esta rama) y probar con dos clientes (Editor + build, perfiles distintos en la pantalla de conexión).
+
+6. Comprobar el resultado:
+
+   ```bash
+   ugs cloud-code modules get MicrobeOpsModule -p <id> -e <entorno>
+   ugs triggers list  -p <id> -e <entorno>
+   ugs scheduler list -p <id> -e <entorno>
+   ```
+
+7. En Unity: menú **Microbe Ops ▸ Configurar modo online en las escenas** (ya aplicado en esta rama) y probar con dos clientes (Editor + build, perfiles distintos en la pantalla de conexión).
+
+### Despliegue automático (GitHub Actions)
+
+`.github/workflows/deploy-ugs.yml` despliega en cada push a `main` que toque `Server/**`, y también a mano (*Actions ▸ Deploy UGS ▸ Run workflow*, con opción de simulación). Configura estos secretos en el repositorio:
+
+| Secreto | Valor |
+|---|---|
+| `UGS_CLI_SERVICE_KEY_ID` | Key ID de la Service Account |
+| `UGS_CLI_SERVICE_SECRET_KEY` | Secret de la Service Account |
+| `UGS_CLI_PROJECT_ID` | ID del proyecto de Unity Cloud |
+| `UGS_CLI_ENVIRONMENT_NAME` | Entorno (por defecto `production`) |
+
+El trabajo del módulo es obligatorio; el de trigger/scheduler es independiente y, si a la cuenta le faltan esos roles (`403 Not authorized`), el módulo igual queda desplegado y el resumen del workflow lo indica.
+
 
 ## Decisiones de seguridad
 
