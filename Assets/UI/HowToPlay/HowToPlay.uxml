@@ -1,0 +1,86 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <Style src="HowToPlay.uss" />
+    <ui:VisualElement name="root" class="screen">
+        <ui:VisualElement name="blob-1" class="blob blob-1" picking-mode="Ignore" />
+        <ui:VisualElement name="blob-2" class="blob blob-2" picking-mode="Ignore" />
+        <ui:VisualElement name="blob-3" class="blob blob-3" picking-mode="Ignore" />
+
+        <ui:VisualElement name="content" class="content">
+            <ui:VisualElement class="header reveal">
+                <ui:Label text="MICROBE OPS" class="kicker" />
+                <ui:Label text="Cómo jugar" class="title" />
+                <ui:Label text="Dos flotas de microorganismos se esconden en la oscuridad. Encuentra y hunde a la enemiga antes de que encuentre la tuya."
+                          class="subtitle" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="main-row">
+                <ui:VisualElement name="steps" class="steps">
+                    <ui:VisualElement class="step reveal">
+                        <ui:Label text="1" class="step-badge" />
+                        <ui:VisualElement class="step-text">
+                            <ui:Label text="Coloca tus organismos" class="step-title" />
+                            <ui:Label text="Pulsa Randomizar hasta que te guste la posición y confirma con Listo."
+                                      class="step-desc" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="step reveal">
+                        <ui:Label text="2" class="step-badge" />
+                        <ui:VisualElement class="step-text">
+                            <ui:Label text="Tira el dado" class="step-title" />
+                            <ui:Label text="1–4: un disparo · 5–7: dos · 8: misil 2x2 · 9: reubicar."
+                                      class="step-desc" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="step reveal">
+                        <ui:Label text="3" class="step-badge" />
+                        <ui:VisualElement class="step-text">
+                            <ui:Label text="Dispara al enemigo" class="step-title" />
+                            <ui:Label text="Haz clic en el tablero rival. Rompe la niebla y busca los impactos."
+                                      class="step-desc" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="step reveal">
+                        <ui:Label text="4" class="step-badge" />
+                        <ui:VisualElement class="step-text">
+                            <ui:Label text="Reubica si sale un 9" class="step-title" />
+                            <ui:Label text="Elige uno de tus organismos y muévelo a una casilla libre. R rota; Esc cancela."
+                                      class="step-desc" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="step reveal">
+                        <ui:Label text="5" class="step-badge" />
+                        <ui:VisualElement class="step-text">
+                            <ui:Label text="Hunde toda la flota" class="step-title" />
+                            <ui:Label text="Gana quien elimine antes todos los organismos del rival. Cuidado con el reloj."
+                                      class="step-desc" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement name="demo-card" class="demo-card reveal">
+                    <ui:VisualElement class="demo-header">
+                        <ui:Label text="DEMO EN VIVO" class="demo-label" />
+                        <ui:Label name="demo-dice" text="DADO · —" class="demo-dice" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement name="demo-grid" class="demo-grid" />
+
+                    <ui:Label name="demo-caption" text="Preparando la partida…" class="demo-caption" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <ui:VisualElement class="footer reveal">
+                <ui:Label text="Consejo: la niebla oculta al rival. Un impacto te dice que hay algo debajo."
+                          class="hint" />
+                <ui:VisualElement class="buttons">
+                    <ui:Button name="back-button" text="Volver" class="button secondary" />
+                    <ui:Button name="play-button" text="Jugar contra la IA" class="button primary" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

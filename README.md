@@ -28,10 +28,14 @@ Gana quien elimina todos los organismos rivales. Cada turno dura 30 s.
 Assets/Scripts/MicrobeOps/
 ├── gameplay/   Modo local y contra IA (Gamemanager, BoardView, EnemyAI, …) sobre GameBoard/Catalog
 ├── Core/       Reglas puras SIN Unity, compartidas con el servidor (MatchEngine, GameBoard, Protocolo)
+├── UI/         Pantalla "Cómo jugar" con UI Toolkit (HowToPlayController)
 └── Online/     Cliente online (OnlineSession: red; OnlineGameManager: partida)
-Assets/Editor/  OnlineSetup: configura las escenas para el modo online
+Assets/UI/       UXML/USS de UI Toolkit y PanelSettings
+Assets/Editor/  OnlineSetup y HowToPlaySetup (genera la escena y ordena el Build Settings)
 Server/         Módulo de Cloud Code, pruebas y documentación del protocolo
 ```
+
+La escena `Assets/Scenes/HowToPlay.unity` se genera desde el menú **Tools ▸ Microbe OPS ▸ Setup ▸ HowToPlay + Build Settings**; el menú principal la abre con el botón *How to play*.
 
 ## Pruebas
 
@@ -42,4 +46,3 @@ dotnet test Server/MicrobeOps.Tests
 ## Pendiente
 
 * Desplegar y probar el módulo contra servicios reales (ver *Estado y límites conocidos* en `Server/README.md`).
-* Implementar la escena `HowToPlay`.

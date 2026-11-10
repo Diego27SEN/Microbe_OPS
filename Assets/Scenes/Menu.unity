@@ -352,7 +352,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 698309780}
-        m_TargetAssemblyTypeName: MainMenuManager, Cloud2026.Runtime
+        m_TargetAssemblyTypeName: MainMenuManager, Assembly-CSharp
         m_MethodName: OnHowToPlayButtonClicked
         m_Mode: 1
         m_Arguments:
@@ -768,7 +768,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e2d36bc85ef55c048a717dfd8d46e4a1, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Cloud2026.Runtime::SceneController
+  m_EditorClassIdentifier: Assembly-CSharp::SceneController
   fadeImage: {fileID: 1311717874}
   duration: 5
 --- !u!4 &580473065
@@ -814,7 +814,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1436b436a8e49ff4ea7fcb423baf920e, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Cloud2026.Runtime::MainMenuManager
+  m_EditorClassIdentifier: Assembly-CSharp::MainMenuManager
   sceneController: {fileID: 580473064}
   gameplaySceneName: Gameplay_MBOPS
   optionsSceneName: Options_MBOPS
@@ -999,7 +999,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 698309780}
-        m_TargetAssemblyTypeName: MainMenuManager, Cloud2026.Runtime
+        m_TargetAssemblyTypeName: MainMenuManager, Assembly-CSharp
         m_MethodName: OnPlayButtonClicked
         m_Mode: 1
         m_Arguments:
@@ -1908,7 +1908,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 698309780}
-        m_TargetAssemblyTypeName: MainMenuManager, Cloud2026.Runtime
+        m_TargetAssemblyTypeName: MainMenuManager, Assembly-CSharp
         m_MethodName: OnOptionsButtonClicked
         m_Mode: 1
         m_Arguments:
