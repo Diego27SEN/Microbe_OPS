@@ -32,6 +32,9 @@ El nombre del ensamblado (`MicrobeOpsModule`) debe coincidir con el del `.ccm`; 
 Requisitos: [.NET SDK 10](https://dotnet.microsoft.com/download), Node.js y la CLI de UGS (`npm install -g ugs`).
 
 1. En el [Dashboard de Unity](https://cloud.unity.com) crear/elegir un proyecto y un entorno; vincularlo en Unity (*Edit ▸ Project Settings ▸ Services*).
+
+   > **Entorno de desarrollo actual:** `development` (`48d5390d-be05-4128-a5a7-c4253d8597e0`) en el proyecto **MicrobeOPS** (`76a77e2c-e19d-48a2-bc14-0e012e22cb9b`). Unity debe apuntar a ese mismo proyecto y entorno. No despliegues a `production` hasta validar el flujo completo en `development`.
+
 2. Activar **Authentication** (inicio de sesión anónimo), **Multiplayer Services** (sesiones, solo para emparejar con código), **Cloud Code** y **Cloud Save**.
 3. Crear una **Service Account** y darle estos roles del proyecto:
    * Cloud Code (editor/publicador) y **Unity Environments Admin** — necesarios para el módulo.
@@ -81,9 +84,11 @@ Requisitos: [.NET SDK 10](https://dotnet.microsoft.com/download), Node.js y la C
 | `UGS_CLI_SERVICE_KEY_ID` | Key ID de la Service Account |
 | `UGS_CLI_SERVICE_SECRET_KEY` | Secret de la Service Account |
 | `UGS_CLI_PROJECT_ID` | ID del proyecto de Unity Cloud |
-| `UGS_CLI_ENVIRONMENT_NAME` | Entorno (por defecto `production`) |
+| `UGS_CLI_ENVIRONMENT_NAME` | Entorno (por defecto `development`) |
 
 El trabajo del módulo es obligatorio; el de trigger/scheduler es independiente y, si a la cuenta le faltan esos roles (`403 Not authorized`), el módulo igual queda desplegado y el resumen del workflow lo indica.
+
+> La autenticación por Unity Hub (`ugs login --unity-hub`) sirve para desplegar desde tu equipo, pero el CI necesita una **Service Account con acceso al proyecto MicrobeOPS**. Configura `UGS_CLI_PROJECT_ID` con el ID de ese proyecto y `UGS_CLI_ENVIRONMENT_NAME=development`.
 
 
 ## Decisiones de seguridad
@@ -94,7 +99,7 @@ El trabajo del módulo es obligatorio; el de trigger/scheduler es independiente 
 
 ## Estado y límites conocidos
 
-* **No se ha probado de extremo a extremo contra servicios reales.** La lógica está probada con almacén y avisos falsos (`IMatchStore`, `IPlayerNotifier`); falta desplegarlo para validar la forma exacta de las respuestas de Cloud Save (`409` en conflicto de *write lock*), el trigger programado y los push.
+* **Desplegado en `development`, pendiente de prueba E2E.** El módulo con sus 5 endpoints, el trigger y el scheduler (cada hora; UGS no admite frecuencias menores) están desplegados en el proyecto `MicrobeOPS`. La lógica está probada con almacén y avisos falsos (`IMatchStore`, `IPlayerNotifier`); falta validar contra los servicios reales la forma exacta de las respuestas de Cloud Save (`409` en conflicto de *write lock*) y los push.
 * **Creación simultánea**: si los dos jugadores crean a la vez, un registro puede pisar al otro; `CreateMatch` lo detecta (relee y se une) pero no es una operación atómica del almacén.
 * **Emparejamiento solo por código de sala** (el id de la sala hace de `handoffId`); con Matchmaker habría que comprobar además el ticket. `GetGameConfig` aún no lee Remote Config.
-* La pantalla de sala usa IMGUI provisional. El dado tiene 9 caras (sin rayos X ni escudo), igual que el modo local.
+* La pantalla de partida sigue siendo provisional. El lobby de crear/unirse ya usa UI Toolkit (`Assets/UI/Online`); el dado tiene 9 caras (sin rayos X ni escudo), igual que el modo local.

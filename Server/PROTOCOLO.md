@@ -19,7 +19,7 @@ Tipos en `Core/Protocol.cs`, compartidos por cliente y servidor. `GameProtocol.V
 | `CreateMatch` | `handoffId` | Idempotente. El `matchId` sale del hash del `handoffId`, así los dos jugadores llegan al mismo registro. El primero crea una partida *esperando*; el segundo la completa, se ordenan los `playerId` (el primero son los Glóbulos Blancos y empieza), se guarda la **semilla secreta** de colocación y arranca. Un tercero recibe `RoomFull`. Devuelve también la partida en curso si el jugador se reconecta. |
 | `PlayMove` | `matchId`, `kind`, `x`, `y`, `organismId`, `rotation` | `kind` = `roll` \| `shoot` \| `relocate` \| `leave`. **No existe parámetro para la cara del dado.** Devuelve `MatchResponse { Ok, Code, Message, State }`; si se rechaza, `State` trae el estado actual para resincronizar. |
 | `GetMatchState` | `matchId` | Mi vista. También resuelve con el reloj del servidor los turnos vencidos y el abandono. |
-| `SweepAbandonedMatches` | `maxMatches?` | Lo dispara un trigger programado (`Deploy/*.tr`, `*.sched`, cada 5 min). Cierra partidas que nadie consulta. |
+| `SweepAbandonedMatches` | `maxMatches?` | Lo dispara un trigger programado (`Deploy/*.tr`, `*.sched`, cada hora; UGS Scheduler no admite frecuencias menores). Cierra partidas que nadie consulta. |
 
 ### Qué valida `PlayMove` (en este orden)
 

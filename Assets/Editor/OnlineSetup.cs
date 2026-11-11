@@ -6,13 +6,15 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // Prepara las escenas para el modo online SIN editar los .unity a mano:
-//   Gameplay_MBOPS: añade OnlineGameManager junto al Gamemanager y copia sus referencias.
+//   Gameplay_MBOPS: añade OnlineGameManager + el lobby UI Toolkit junto al Gamemanager.
 //   Menu: añade el botón "Online" y enlaza el botón Quit, que estaba sin función.
 // Es idempotente: se puede ejecutar varias veces. Menú: Microbe Ops > Configurar modo online.
 public static class OnlineSetup
 {
     private const string GameplayScene = "Assets/Scenes/Gameplay_MBOPS.unity";
     private const string MenuScene = "Assets/Scenes/Menu.unity";
+    private const string LobbyUxml = "Assets/UI/Online/OnlineLobby.uxml";
+    private const string LobbyPanel = "Assets/UI/Online/OnlineLobbyPanelSettings.asset";
 
     [MenuItem("Microbe Ops/Configurar modo online en las escenas")]
     public static void Run()
@@ -51,7 +53,25 @@ public static class OnlineSetup
         online.validColor = gm.validColor;
         online.invalidColor = gm.invalidColor;
 
+        // Lobby visual (UI Toolkit). Se monta en el mismo objeto que el Gamemanager.
+        var view = gm.GetComponent<OnlineLobbyView>();
+        if (view == null) view = gm.gameObject.AddComponent<OnlineLobbyView>();
+
+        var document = gm.GetComponent<UnityEngine.UIElements.UIDocument>();
+        if (document == null) document = gm.gameObject.AddComponent<UnityEngine.UIElements.UIDocument>();
+
+        document.visualTreeAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>(LobbyUxml);
+        document.panelSettings = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.PanelSettings>(LobbyPanel);
+        if (document.visualTreeAsset == null)
+            Debug.LogError("[OnlineSetup] No se encontró " + LobbyUxml);
+        if (document.panelSettings == null)
+            Debug.LogError("[OnlineSetup] No se encontró " + LobbyPanel);
+
+        online.lobby = view;
+
         EditorUtility.SetDirty(online);
+        EditorUtility.SetDirty(view);
+        EditorUtility.SetDirty(document);
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
     }

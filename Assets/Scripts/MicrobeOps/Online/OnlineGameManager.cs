@@ -29,6 +29,7 @@ public class OnlineGameManager : MonoBehaviour
     public TMPro.TextMeshProUGUI timerText;
     public TMPro.TextMeshProUGUI turnText;
     public TMPro.TextMeshProUGUI messageText;
+    public OnlineLobbyView lobby;
 
     [Header("Reubicar (colores de la vista previa)")]
     public Color selectColor = new Color(1f, 0.9f, 0.2f, 0.65f);
@@ -57,6 +58,7 @@ public class OnlineGameManager : MonoBehaviour
     private float lastRefreshAt;
     private bool refreshing;
     private bool busy;                 // hay una orden en vuelo: evita dobles clics
+    private bool lobbySynced;          // ya se pidió al lobby que mostrara su primera pantalla
 
     private PlayerSide mine, opp;
     private GameBoard myLogic;         // solo MI tablero (el del rival nunca llega al cliente)
@@ -95,7 +97,13 @@ public class OnlineGameManager : MonoBehaviour
             dice.SetLocked(true);
             dice.RollRequested += OnRollRequested;
         }
+
+        if (lobby == null) lobby = FindFirstObjectByType<OnlineLobbyView>();
+        if (lobby != null) SubscribeLobby();
+
         Say("Modo online: conecta para empezar.");
+        SyncLobby();
+        lobbySynced = lobby != null && lobby.IsReady;
     }
 
     private void OnDestroy()
@@ -110,6 +118,15 @@ public class OnlineGameManager : MonoBehaviour
 
     private void Update()
     {
+        // El UIDocument puede terminar de montarse un frame después de Start.
+        // SyncLobby() ya intenta inicializar la vista; si todavía no está lista,
+        // se reintenta hasta que lo esté. Así no importa el orden de los Start().
+        if (lobby != null && !lobbySynced && lobby.EnsureInitialized())
+        {
+            SyncLobby();
+            lobbySynced = true;
+        }
+
         if (state == null || (ui != UiState.Playing && ui != UiState.Waiting)) return;
 
         bool refresh = false;
@@ -169,6 +186,7 @@ public class OnlineGameManager : MonoBehaviour
         {
             ui = UiState.Waiting;
             status = $"Sala {session.RoomCode}: esperando al rival...";
+            SyncLobby();
             return;
         }
 
@@ -194,6 +212,7 @@ public class OnlineGameManager : MonoBehaviour
 
         Focus(s);
         UpdateTurnLabel();
+        SyncLobby();
     }
 
     private void EnterTurn(MatchStateDto s)
@@ -303,6 +322,7 @@ public class OnlineGameManager : MonoBehaviour
         session.ForgetSavedSession();
         Focus(s);
         if (timerText != null) timerText.text = "";
+        SyncLobby();
     }
 
     private static PlacedOrganism MakeOrganism(PlacementDto p) =>
@@ -474,6 +494,7 @@ public class OnlineGameManager : MonoBehaviour
     {
         ui = UiState.Connecting;
         status = "Conectando con Unity Services...";
+        SyncLobby();
         try
         {
             await session.InitAsync(profile);
@@ -483,18 +504,21 @@ public class OnlineGameManager : MonoBehaviour
             {
                 ui = UiState.Error;
                 status = $"Versión incompatible (cliente {GameProtocol.Version}, servidor {config.ProtocolVersion}). Actualiza el juego.";
+                SyncLobby();
                 return;
             }
             pollSeconds = Mathf.Max(2f, config.PollSeconds);
 
             ui = UiState.Lobby;
-            status = "Conectado.";
+            status = "Conectado. Crea una sala o únete con un código.";
+            SyncLobby();
         }
         catch (Exception e)
         {
             ui = UiState.Error;
             status = "No se pudo conectar: " + e.Message;
             Debug.LogException(e);
+            SyncLobby();
         }
     }
 
@@ -504,6 +528,7 @@ public class OnlineGameManager : MonoBehaviour
     {
         ui = UiState.Connecting;
         status = "Entrando a la sala...";
+        SyncLobby();
         try
         {
             await joinRoom();
@@ -512,6 +537,7 @@ public class OnlineGameManager : MonoBehaviour
             {
                 ui = UiState.Lobby;
                 status = response.Message ?? response.Code;
+                SyncLobby();
                 await session.LeaveRoomAsync();
                 return;
             }
@@ -526,6 +552,7 @@ public class OnlineGameManager : MonoBehaviour
             ui = UiState.Lobby;
             status = "No se pudo entrar: " + e.Message;
             Debug.LogException(e);
+            SyncLobby();
         }
     }
 
@@ -541,7 +568,79 @@ public class OnlineGameManager : MonoBehaviour
         SceneManager.LoadScene(menuSceneName);
     }
 
-    // ---------- Pantallas de sala (IMGUI sencillo; no necesita objetos en la escena) ----------
+    // ---------- Lobby visual (UI Toolkit) ----------
+
+    private void SubscribeLobby()
+    {
+        lobby.ConnectRequested += OnLobbyConnect;
+        lobby.CreateRequested += OnLobbyCreate;
+        lobby.JoinRequested += OnLobbyJoin;
+        lobby.ResumeRequested += OnLobbyResume;
+        lobby.BackRequested += OnLobbyBack;
+        lobby.CancelRequested += OnLobbyCancel;
+        lobby.AbandonRequested += OnLobbyCancel;
+        lobby.RetryRequested += OnLobbyRetry;
+    }
+
+    private void OnLobbyConnect(string profileName)
+    {
+        profile = profileName ?? "";
+        Fire(ConnectAsync());
+    }
+
+    private void OnLobbyCreate() =>
+        Fire(EnterRoomAsync(async () => { await session.CreateRoomAsync(); }));
+
+    private void OnLobbyJoin(string code)
+    {
+        joinCode = (code ?? "").Trim();
+        if (joinCode.Length == 0) return;
+        Fire(EnterRoomAsync(() => session.JoinRoomAsync(joinCode)));
+    }
+
+    private void OnLobbyResume() =>
+        Fire(EnterRoomAsync(() => session.ReconnectRoomAsync()));
+
+    private void OnLobbyBack() => SceneManager.LoadScene(menuSceneName);
+
+    private void OnLobbyCancel() => Fire(LeaveAsync());
+
+    private void OnLobbyRetry() => Fire(ConnectAsync());
+
+    // Lleva el estado del manager a la pantalla correcta del lobby.
+    // Inicializa la vista si hace falta: no depende del orden de los Start().
+    private void SyncLobby()
+    {
+        if (lobby == null || !lobby.EnsureInitialized()) return;
+
+        switch (ui)
+        {
+            case UiState.Start:
+                lobby.ShowConnect(profile);
+                break;
+            case UiState.Connecting:
+                lobby.ShowBusy(status);
+                break;
+            case UiState.Lobby:
+                lobby.ShowLobby(status, !string.IsNullOrEmpty(session.SavedSessionId));
+                break;
+            case UiState.Waiting:
+                lobby.ShowWaiting(session.RoomCode, status);
+                break;
+            case UiState.Playing:
+                lobby.ShowPlaying();
+                break;
+            case UiState.Finished:
+                lobby.ShowFinished(banner);
+                break;
+            case UiState.Error:
+                lobby.ShowError(status);
+                break;
+        }
+    }
+
+    // ---------- Pantallas de sala (IMGUI de respaldo) ----------
+    // Solo se usan si la escena no tiene montado el OnlineLobbyView.
 
     private void InitStyles()
     {
@@ -555,6 +654,9 @@ public class OnlineGameManager : MonoBehaviour
 
     private void OnGUI()
     {
+        // Con el lobby visual montado, IMGUI solo actúa como respaldo.
+        if (lobby != null && lobby.IsReady) return;
+
         InitStyles();
         float s = Screen.height / 720f;
         GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1f));

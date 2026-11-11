@@ -20,7 +20,7 @@ Gana quien elimina todos los organismos rivales. Cada turno dura 30 s.
 
 1. Abrir la carpeta con **Unity 6000.3.23f1** (la primera vez descarga los paquetes de Unity Services).
 2. Abrir la escena `Assets/Scenes/Menu.unity` y pulsar Play.
-3. Para el modo Online hace falta desplegar el módulo en un proyecto de Unity Gaming Services propio: [Server/README.md](Server/README.md).
+3. Para el modo Online hace falta desplegar el módulo en el entorno `development` del proyecto de Unity Gaming Services: [Server/README.md](Server/README.md).
 
 ## Estructura
 

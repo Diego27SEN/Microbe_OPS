@@ -46,7 +46,7 @@
 .EXAMPLE
     $env:UGS_CLI_SERVICE_KEY_ID = "..."
     $env:UGS_CLI_SERVICE_SECRET_KEY = "..."
-    ./Server/deploy-ugs.ps1 -ProjectId 78b3... -EnvironmentName production
+    ./Server/deploy-ugs.ps1 -ProjectId <project-id> -EnvironmentName development
 #>
 [CmdletBinding()]
 param(
@@ -190,7 +190,7 @@ if (-not $SkipConfig) {
             Write-Host "     Scheduler Configuration Editor (en Admin: Unity Environments Admin),"
             Write-Host "     y vuelve a ejecutar: ./Server/deploy-ugs.ps1 -SkipBuild -SkipTests"
             Write-Host "  B) Crea a mano en el Dashboard:"
-            Write-Host "     - Scheduler: evento 'microbeops-sweep-tick', cron '*/5 * * * *'."
+            Write-Host "     - Scheduler: evento 'microbeops-sweep-tick', cron '0 * * * *' (cada hora)."
             Write-Host "     - Trigger: evento 'com.unity.services.scheduler.microbeops-sweep-tick.v1' ->"
             Write-Host "       Cloud Code MicrobeOpsModule/SweepAbandonedMatches."
         } else {

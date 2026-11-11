@@ -1,0 +1,314 @@
+/* ============================================================
+   Lobby del modo Online
+   Misma paleta y lenguaje visual que la pantalla HowToPlay.
+   ============================================================ */
+
+.lobby-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    flex-grow: 1;
+}
+
+/* Cada pantalla ocupa todo el panel; el código muestra una y oculta el resto. */
+.screen {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(6, 11, 18, 0.93);
+    overflow: hidden;
+}
+
+.center {
+    flex-grow: 1;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+}
+
+/* Manchas decorativas */
+.blob {
+    position: absolute;
+    border-radius: 400px;
+    opacity: 0.65;
+}
+
+.blob-1 {
+    width: 560px;
+    height: 560px;
+    background-color: rgba(20, 184, 166, 0.16);
+    left: -170px;
+    top: -200px;
+}
+
+.blob-2 {
+    width: 500px;
+    height: 500px;
+    background-color: rgba(80, 110, 255, 0.13);
+    right: -150px;
+    top: 8%;
+}
+
+.blob-3 {
+    width: 430px;
+    height: 430px;
+    background-color: rgba(251, 113, 133, 0.10);
+    left: 30%;
+    bottom: -230px;
+}
+
+/* Tarjetas */
+.card {
+    background-color: rgba(13, 22, 32, 0.96);
+    border-width: 1px;
+    border-color: rgba(86, 220, 200, 0.20);
+    border-radius: 24px;
+    padding: 30px 34px;
+}
+
+.connect-card {
+    width: 480px;
+}
+
+.waiting-card {
+    width: 520px;
+    align-items: center;
+}
+
+.lobby-wrap {
+    width: 880px;
+    max-width: 100%;
+    align-items: stretch;
+}
+
+.lobby-head {
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.mode-row {
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.mode-card {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin: 0 9px;
+    min-height: 300px;
+}
+
+.card-title {
+    color: #eef6fa;
+    font-size: 26px;
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+}
+
+.card-desc {
+    color: #8fa4b6;
+    font-size: 15px;
+    white-space: normal;
+    margin-bottom: 10px;
+}
+
+.card-spacer {
+    flex-grow: 1;
+    min-height: 12px;
+}
+
+/* Tipografía */
+.kicker {
+    color: #35d6c1;
+    font-size: 12px;
+    letter-spacing: 4px;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.danger-text {
+    color: #fb7185;
+}
+
+.title {
+    color: #f4f8fb;
+    font-size: 48px;
+    -unity-font-style: bold;
+    letter-spacing: -1px;
+    white-space: normal;
+}
+
+.title.small {
+    font-size: 30px;
+}
+
+.subtitle {
+    color: #93a6b8;
+    font-size: 16px;
+    margin-top: 6px;
+    margin-bottom: 8px;
+    max-width: 640px;
+    white-space: normal;
+}
+
+.hint {
+    color: #5f7488;
+    font-size: 12px;
+    margin-bottom: 2px;
+    white-space: normal;
+}
+
+.field-label {
+    color: #cbd8e3;
+    font-size: 13px;
+    letter-spacing: 1px;
+    -unity-font-style: bold;
+    margin-top: 12px;
+}
+
+.status {
+    color: #93a6b8;
+    font-size: 15px;
+    min-height: 22px;
+    margin: 10px 0 6px 0;
+    white-space: normal;
+    -unity-text-align: middle-center;
+}
+
+/* Campos de texto */
+.field {
+    height: 48px;
+    margin: 6px 0 10px 0;
+    padding: 0 14px;
+    background-color: rgba(9, 16, 24, 0.95);
+    border-width: 1px;
+    border-color: rgba(120, 150, 175, 0.35);
+    border-radius: 12px;
+    color: #eef6fa;
+    font-size: 18px;
+}
+
+.field:hover {
+    border-color: rgba(86, 220, 200, 0.55);
+}
+
+.field:focus {
+    border-color: #14b8a6;
+}
+
+.field .unity-text-field__input,
+.field .unity-base-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #eef6fa;
+    font-size: 18px;
+    padding: 0;
+    margin: 0;
+}
+
+.code-field {
+    letter-spacing: 6px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.code-field .unity-text-field__input,
+.code-field .unity-base-text-field__input {
+    letter-spacing: 6px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+/* Código de sala grande */
+.room-code {
+    color: #35d6c1;
+    font-size: 56px;
+    -unity-font-style: bold;
+    letter-spacing: 14px;
+    margin: 18px 0 8px 0;
+    -unity-text-align: middle-center;
+}
+
+/* Botones */
+.button {
+    height: 50px;
+    padding: 0 24px;
+    margin: 4px 0;
+    border-radius: 14px;
+    font-size: 16px;
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    border-width: 1px;
+    transition-property: scale, background-color, border-color;
+    transition-duration: 0.15s;
+}
+
+.button:hover {
+    scale: 1.02 1.02;
+}
+
+.button:active {
+    scale: 0.98 0.98;
+}
+
+.button.wide {
+    width: 100%;
+}
+
+.button.primary {
+    background-color: #14b8a6;
+    color: #04201d;
+    border-color: #14b8a6;
+}
+
+.button.primary:hover {
+    background-color: #2dd4bf;
+    border-color: #2dd4bf;
+}
+
+.button.secondary {
+    background-color: rgba(22, 36, 50, 0.95);
+    color: #cbd8e3;
+    border-color: rgba(140, 170, 190, 0.35);
+}
+
+.button.secondary:hover {
+    background-color: rgba(34, 52, 70, 0.98);
+    border-color: rgba(140, 170, 190, 0.6);
+}
+
+.button.ghost {
+    background-color: transparent;
+    color: #8fa4b6;
+    border-color: rgba(140, 170, 190, 0.18);
+}
+
+.button.ghost:hover {
+    color: #cbd8e3;
+    border-color: rgba(140, 170, 190, 0.45);
+}
+
+.button.danger {
+    background-color: rgba(120, 24, 40, 0.9);
+    color: #ffe4e8;
+    border-color: rgba(251, 113, 133, 0.55);
+    width: 150px;
+}
+
+.button.danger:hover {
+    background-color: rgba(159, 32, 53, 0.95);
+    border-color: #fb7185;
+}
+
+/* Botón de abandonar durante la partida: no bloquea el resto de la pantalla. */
+.playing-screen {
+    display: none;
+    position: absolute;
+    top: 22px;
+    right: 22px;
+}

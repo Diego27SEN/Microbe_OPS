@@ -1,6 +1,6 @@
 # Pruebas y tareas del modo online
 
-Este documento es para ustedes (los alumnos). El PR trae el modo online de Microbe_OPS, pero **solo se probó con pruebas automáticas y compilando en Unity: nunca se ejecutó una partida de extremo a extremo contra Unity Gaming Services (UGS) real** (el módulo ya está desplegado en el proyecto del curso). Su trabajo es probarlo, reportar qué pasó y seguir desarrollando.
+Este documento es para ustedes (los alumnos). El PR trae el modo online de Microbe_OPS, pero **solo se probó con pruebas automáticas y compilando en Unity: nunca se ejecutó una partida de extremo a extremo contra Unity Gaming Services (UGS) real**. El módulo, el trigger y el scheduler ya están desplegados en el entorno `development` del proyecto **MicrobeOPS**. Su trabajo es probarlo, reportar qué pasó y seguir desarrollando.
 
 Para entender el diseño antes de probar, lean en este orden: `Server/PROTOCOLO.md` → `Assets/Scripts/MicrobeOps/Core/MatchEngine.cs` → `Server/MicrobeOps.Module/MatchService.cs` → `Assets/Scripts/MicrobeOps/Online/OnlineGameManager.cs`.
 
@@ -29,7 +29,7 @@ Pasos en `Server/README.md` (sección *Despliegue en Unity Gaming Services*). **
 | B1 | `./Server/deploy-ugs.ps1 -DryRun` | Pasan las 77 pruebas, se genera `Server/out/MicrobeOpsModule.ccm` y la simulación no cambia nada en UGS | Error de compilación, de publicación o de credenciales |
 | B2 | Vincular el proyecto a UGS y activar Authentication, Multiplayer Services, Cloud Code y Cloud Save | El Dashboard muestra los 4 servicios activos | Qué paso no pudieron hacer |
 | B3 | `./Server/deploy-ugs.ps1` | El Dashboard muestra el módulo con `CreateMatch`, `PlayMove`, `GetMatchState`, `GetGameConfig` y `SweepAbandonedMatches` | El mensaje de error de `ugs` |
-| B4 | Trigger y scheduler | `ugs triggers list` y `ugs scheduler list` muestran el barrido cada 5 min. Si la Service Account no tiene los roles *Triggers Configuration Editor* y *Scheduler Configuration Editor*, `ugs` responde `403 Not authorized` y el script lo explica | El mensaje de error completo |
+| B4 | Trigger y scheduler | `ugs triggers list` y `ugs scheduler list` muestran el barrido cada hora (`0 * * * *`; UGS Scheduler no admite frecuencias menores). Si la Service Account no tiene los roles *Triggers Configuration Editor* y *Scheduler Configuration Editor*, `ugs` responde `403 Not authorized` y el script lo explica | El mensaje de error completo |
 | B5 | Workflow de CI | En GitHub ▸ Actions ▸ **Deploy UGS** el trabajo del módulo queda en verde | El paso que falló y su log |
 
 ## C. Partida entre dos clientes (flujo normal)
@@ -100,7 +100,7 @@ Elijan una por persona y abran su propio PR. Cada una tiene una pista para que l
 | T1 | **Un solo dado.** `DiceController.OutcomeFromFace` y `Dice.FromFace` (Core) repiten la misma regla. | Hagan que el modo local use el del Core y borren la copia; la prueba `Dice_maps_faces_like_the_local_game` debe seguir pasando |
 | T2 | **Matchmaker.** Reemplazar el código de sala por una cola de Matchmaker. | `handoffId` ya es el punto de unión; el servidor debería comprobar el ticket antes de aceptar a alguien |
 | T3 | **Remote Config.** Que `GetGameConfig` lea tiempos y reglas de Remote Config. | Los `MatchSettings` ya viajan dentro del registro: ¿qué pasa con partidas en curso si cambian? |
-| T4 | **UI de sala.** Reemplazar el panel IMGUI por uGUI o UI Toolkit. | La lógica ya está separada en `OnlineGameManager`; muevan solo el dibujo |
+| T4 | **Pulir el lobby.** El lobby de crear/unirse ya usa UI Toolkit (`Assets/UI/Online`). | Añadan validación del código, estado de conexión y un botón para copiar el código; mantengan la lógica en `OnlineGameManager` y el dibujo en `OnlineLobbyView` |
 | T5 | **Unificar el modo contra IA.** `Board`/`Organism` están duplicados con `GameBoard` del Core. | Que `Gamemanager` use `GameBoard` y borren lo duplicado, con pruebas antes y después |
 | T6 | **Creación atómica.** Hoy dos creadores simultáneos pueden pisarse y se corrige releyendo. | Busquen una forma de "crear solo si no existe" en Cloud Save y expliquen por qué es mejor |
 | T7 | **CI de pruebas.** Agregar un workflow que ejecute `dotnet test` en cada PR, sin secretos. | El de despliegue ya existe (`.github/workflows/deploy-ugs.yml`), pero necesita credenciales; uno de solo pruebas puede correr en cualquier PR |

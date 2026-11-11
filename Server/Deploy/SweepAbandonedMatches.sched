@@ -3,10 +3,12 @@
   "Configs": {
     "MicrobeOpsSweepSchedule": {
       "EventName": "microbeops-sweep-tick",
-      "ScheduleType": "recurring",
-      "Schedule": "*/5 * * * *",
+      "Type": "recurring",
+      "Schedule": "0 * * * *",
       "PayloadVersion": 1,
-      "Payload": "{}"
+      "Payload": "{}",
+      "StartAt": null,
+      "EndAt": null
     }
   }
 }

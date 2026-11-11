@@ -1,0 +1,130 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <ui:Style src="OnlineLobby.uss" />
+
+    <ui:VisualElement name="root" class="lobby-root" picking-mode="Ignore">
+
+        <!-- ============ Conectar ============ -->
+        <ui:VisualElement name="screen-connect" class="screen" picking-mode="Position">
+            <ui:VisualElement class="blob blob-1" picking-mode="Ignore" />
+            <ui:VisualElement class="blob blob-2" picking-mode="Ignore" />
+
+            <ui:VisualElement class="center">
+                <ui:VisualElement class="card connect-card">
+                    <ui:Label text="MICROBE OPS" class="kicker" />
+                    <ui:Label text="Partida online" class="title" />
+                    <ui:Label text="Conecta con Unity Services para crear una sala o unirte con un código."
+                              class="subtitle" />
+
+                    <ui:Label text="Perfil (opcional)" class="field-label" />
+                    <ui:Label text="Sirve para abrir dos clientes en el mismo equipo con jugadores distintos."
+                              class="hint" />
+                    <ui:TextField name="profile-field" class="field" max-length="16" />
+
+                    <ui:Label name="connect-status" class="status" />
+                    <ui:Button name="connect-button" text="Conectar" class="button primary wide" />
+                    <ui:Button name="connect-back-button" text="Volver al menú" class="button ghost wide" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============ Crear / Unirse ============ -->
+        <ui:VisualElement name="screen-lobby" class="screen" picking-mode="Position">
+            <ui:VisualElement class="blob blob-1" picking-mode="Ignore" />
+            <ui:VisualElement class="blob blob-2" picking-mode="Ignore" />
+            <ui:VisualElement class="blob blob-3" picking-mode="Ignore" />
+
+            <ui:VisualElement class="center">
+                <ui:VisualElement class="lobby-wrap">
+                    <ui:VisualElement class="lobby-head">
+                        <ui:Label text="MICROBE OPS" class="kicker" />
+                        <ui:Label text="Partida online" class="title" />
+                        <ui:Label name="lobby-status" class="status" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="mode-row">
+                        <ui:VisualElement class="card mode-card">
+                            <ui:Label text="Crear partida" class="card-title" />
+                            <ui:Label text="Abre una sala privada y comparte el código con tu rival."
+                                      class="card-desc" />
+                            <ui:VisualElement class="card-spacer" />
+                            <ui:Button name="create-button" text="Crear sala" class="button primary wide" />
+                        </ui:VisualElement>
+
+                        <ui:VisualElement class="card mode-card">
+                            <ui:Label text="Unirse con código" class="card-title" />
+                            <ui:Label text="Escribe el código que te pasó tu rival para entrar en su sala."
+                                      class="card-desc" />
+                            <ui:Label text="Código de sala" class="field-label" />
+                            <ui:TextField name="join-code-field" class="field code-field" max-length="8" />
+                            <ui:Button name="join-button" text="Unirse" class="button primary wide" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+
+                    <ui:Button name="resume-button" text="Reanudar partida anterior" class="button ghost wide" />
+                    <ui:Button name="lobby-back-button" text="Volver al menú" class="button ghost wide" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============ Sala creada: esperando rival ============ -->
+        <ui:VisualElement name="screen-waiting" class="screen" picking-mode="Position">
+            <ui:VisualElement class="blob blob-2" picking-mode="Ignore" />
+
+            <ui:VisualElement class="center">
+                <ui:VisualElement class="card waiting-card">
+                    <ui:Label text="SALA CREADA" class="kicker" />
+                    <ui:Label text="Comparte este código" class="title small" />
+                    <ui:Label text="Tu rival debe pulsar «Unirse con código» y escribirlo."
+                              class="subtitle" />
+
+                    <ui:Label name="room-code-label" text="—" class="room-code" />
+                    <ui:Label name="waiting-status" class="status" />
+
+                    <ui:Button name="copy-code-button" text="Copiar código" class="button secondary wide" />
+                    <ui:Button name="waiting-cancel-button" text="Cancelar y volver" class="button ghost wide" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============ En partida ============ -->
+        <ui:VisualElement name="screen-playing" class="playing-screen" picking-mode="Position">
+            <ui:Button name="abandon-button" text="Abandonar" class="button danger" />
+        </ui:VisualElement>
+
+        <!-- ============ Partida terminada ============ -->
+        <ui:VisualElement name="screen-finished" class="screen" picking-mode="Position">
+            <ui:VisualElement class="blob blob-3" picking-mode="Ignore" />
+
+            <ui:VisualElement class="center">
+                <ui:VisualElement class="card waiting-card">
+                    <ui:Label text="PARTIDA TERMINADA" class="kicker" />
+                    <ui:Label name="finished-banner" text="—" class="title small" />
+                    <ui:Button name="finished-back-button" text="Volver al menú" class="button primary wide" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============ Error ============ -->
+        <ui:VisualElement name="screen-error" class="screen" picking-mode="Position">
+            <ui:VisualElement class="center">
+                <ui:VisualElement class="card waiting-card">
+                    <ui:Label text="ALGO SALIÓ MAL" class="kicker danger-text" />
+                    <ui:Label name="error-status" text="—" class="subtitle" />
+                    <ui:Button name="error-retry-button" text="Reintentar" class="button primary wide" />
+                    <ui:Button name="error-back-button" text="Volver al menú" class="button ghost wide" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ============ Conectando / ocupado ============ -->
+        <ui:VisualElement name="screen-busy" class="screen" picking-mode="Position">
+            <ui:VisualElement class="center">
+                <ui:VisualElement class="card waiting-card">
+                    <ui:Label text="CONECTANDO" class="kicker" />
+                    <ui:Label name="busy-status" text="Preparando Unity Services…" class="title small" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>
